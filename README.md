@@ -1,1 +1,1 @@
-# pygemma
+# pyGEMMA
