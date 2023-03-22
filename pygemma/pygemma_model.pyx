@@ -1,3 +1,3 @@
 import numpy as np
 
-CalcLambda
+cdef likelihood():
