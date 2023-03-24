@@ -24,7 +24,7 @@ def likelihood_lambda(lam, eigenVals, U, Y, W, x):
 
     result = result - n/2
 
-    result = result - 0.5*np.log(np.prod(lam*eigenVals + 1.0))
+    result = result - 0.5*np.sum(np.log(lam*eigenVals + 1.0))
 
     result = result - (n/2)*np.log(Y.T @ compute_Px(eigenVals, U, W, x, lam) @ Y)
 
@@ -67,15 +67,21 @@ def likelihood_derivative2_lambda(lam, eigenVals, U, Y, W, x):
 
 def CalcLambda(eigenVals, U, Y, W, x):
     # Loop over intervals and find where likelihood changes signs with respect to lambda
-    lambda_sign_change = []
-    
-    likelihood_evals = []
-    roots = []
-    for lambda0, lambda1 in lambda_sign_change:
-        roots.append(optimize.newton(f=lambda l: likelihood_derivative1_lambda(l, eigenVals, U, Y, W, x), 
-                                     x0=lambda0, 
-                                     fprime=likelihood_derivative2_lambda(l, eigenVals, U, Y, W, x)))
-        
-        likelihood_evals.append(likelihood_lambda(roots[-1], eigenVals, U, Y, W, x))
+    lambda0 = np.power(10.0, -5.0)
+    lambda1 = np.power(10.0, 5.0)
 
-    return roots[np.argmin(likelihood_evals)]
+    likelihood_lambda0 = likelihood_derivative1_lambda(lambda0, eigenVals, U, Y, W, x)
+    likelihood_lambda1 = likelihood_derivative1_lambda(lambda1, eigenVals, U, Y, W, x)
+
+    if likelihood_lambda0*likelihood_lambda1 < 0:
+        lambda_min, _ = optimize.brentq(f=lambda l: likelihood_derivative1_lambda(l, eigenVals, U, Y, W, x), 
+                                            a=lambda0, 
+                                            b=lambda1,
+                                            xtol=0.1,
+                                            maxiter=1000)
+    elif likelihood_lambda0 < 0:
+        lambda_min = lambda0
+    else:
+        lambda_min = lambda1
+
+    return lambda_min
