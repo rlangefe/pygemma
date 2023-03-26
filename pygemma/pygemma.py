@@ -102,13 +102,13 @@ def calc_beta_vg_ve_restricted(eigenVals, U, W, x, lam, Y):
     return float(beta), float(se_beta), float(tau)
 
 def compute_Px(eigenVals, U, W, x, lam):
-    H_inv = U @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U.T
+    H_inv = U.T @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U
     W_x = np.c_[W, x]
 
     return H_inv - H_inv @ W_x @ np.linalg.inv(W_x.T @ H_inv @ W_x) @ W_x.T @ H_inv
 
 def compute_Pc(eigenVals, U, W, lam):
-    H_inv = U @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U.T
+    H_inv = U.T @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U
     W_x = W
 
     return H_inv - H_inv @ W_x @ np.linalg.inv(W_x.T @ H_inv @ W_x) @ W_x.T @ H_inv
@@ -305,7 +305,6 @@ def calc_lambda_restricted(eigenVals, U, Y, W, x):
     lambda_pow_high = 5.0
 
     lambda_possible = [(np.power(10.0, i), np.power(10.0, i+step)) for i in np.arange(lambda_pow_low,lambda_pow_high,step)]
-    print(lambda_possible)
 
     roots = [np.power(10.0, lambda_pow_low), np.power(10.0, lambda_pow_high)]
     
