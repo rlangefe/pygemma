@@ -70,21 +70,21 @@ with console.status("[bold green]Running pyGEMMA Function Run Tests...") as stat
 
     # Initializing parameters for tests
     x, Y, W, eigenVals, U, lam, beta, tau = generate_test_matrices(n=n, covars=covars)
-    W = np.c_[W,x]
+    
     console.log(f'Test Parameters: n={n}, lam={lam}, tau={tau}')
     
     functions_and_args = [
-                            (pygemma.compute_Pc, [eigenVals, U, W, lam]),
-                            (pygemma.likelihood_lambda, [lam, eigenVals, U, Y, W]),
-                            (pygemma.likelihood_derivative1_lambda, [lam, eigenVals, U, Y, W]),
-                            (pygemma.likelihood_derivative2_lambda, [lam, eigenVals, U, Y, W]),
-                            (pygemma.calc_lambda, [eigenVals, U, Y, W]),
-                            (pygemma.calc_lambda_restricted, [eigenVals, U, Y, W]),
-                            (pygemma.likelihood, [lam, tau, beta, eigenVals, U, Y, W]),
-                            (pygemma.likelihood_restricted, [lam, tau, eigenVals, U, Y, W]),
-                            (pygemma.likelihood_restricted_lambda, [lam, eigenVals, U, Y, W]),
-                            (pygemma.likelihood_derivative1_restricted_lambda, [lam, eigenVals, U, Y, W]),
-                            (pygemma.likelihood_derivative2_restricted_lambda, [lam, eigenVals, U, Y, W]),
+                            (pygemma.compute_Px, [eigenVals, U, W, x, lam]),
+                            (pygemma.likelihood_lambda, [lam, eigenVals, U, Y, W, x]),
+                            (pygemma.likelihood_derivative1_lambda, [lam, eigenVals, U, Y, W, x]),
+                            (pygemma.likelihood_derivative2_lambda, [lam, eigenVals, U, Y, W, x]),
+                            (pygemma.calc_lambda, [eigenVals, U, Y, W, x]),
+                            (pygemma.calc_lambda_restricted, [eigenVals, U, Y, W, x]),
+                            (pygemma.likelihood, [lam, tau, beta, eigenVals, U, Y, W, x]),
+                            (pygemma.likelihood_restricted, [lam, tau, eigenVals, U, Y, W, x]),
+                            (pygemma.likelihood_restricted_lambda, [lam, eigenVals, U, Y, W, x]),
+                            (pygemma.likelihood_derivative1_restricted_lambda, [lam, eigenVals, U, Y, W, x]),
+                            (pygemma.likelihood_derivative2_restricted_lambda, [lam, eigenVals, U, Y, W, x]),
                           ]
     
     run_test_list(functions_and_args)
@@ -119,7 +119,7 @@ for dataset in dataset_list:
 
     pcs = pca.fit_transform(X)
 
-    sample = np.random.choice(range(0,X.shape[1]), size=1000, replace=False)
+    sample = np.random.choice(range(0,X.shape[1]), size=2, replace=False)
     X = X[:,sample]
     pheno_name = pheno.columns[0]
     Y = pheno[pheno_name].values.reshape(-1,1).astype(np.float32)
@@ -134,8 +134,8 @@ for dataset in dataset_list:
     eigenVals, U = np.linalg.eig(K)
     eigenVals = np.maximum(0, eigenVals)
 
-    lik = [pygemma.likelihood_restricted_lambda(l, eigenVals, U, Y, np.c_[W,x]) for l in lam_vals]
-    lik_der1 = [pygemma.likelihood_derivative1_restricted_lambda(l, eigenVals, U, Y, np.c_[W,x]) for l in lam_vals]
+    lik = [pygemma.likelihood_restricted_lambda(l, eigenVals, U, Y, W, x) for l in lam_vals]
+    lik_der1 = [pygemma.likelihood_derivative1_restricted_lambda(l, eigenVals, U, Y, W, x) for l in lam_vals]
     plt.scatter(x=lam_vals, y=lik)
     plt.show()
     plt.clf()
@@ -148,7 +148,7 @@ for dataset in dataset_list:
         Y = (Y-np.mean(Y))/np.std(Y)
 
         #with console.status(f"[bold green]Running pyGEMMA Tests - {dataset_name}: {pheno_name}...") as status:
-        data_results = pygemma.pygemma(Y, X, W, K, snps=snps['SNP'].values[sample], verbose=1)
+        data_results = pygemma.pygemma(Y, X, W, K, verbose=1)
 
         theoretical = np.linspace(1e-20,1.0,len(data_results))
         pvals = np.sort(data_results['p_wald'])
@@ -165,38 +165,6 @@ for dataset in dataset_list:
             {
             'pos'  : snps['POS'].values[sample],
             'pval' : -np.log10(data_results['p_wald']),
-            'chr' : snps['CHR'].values[sample]
-            }
-        )
-
-        results_df = results_df.sort_values(['chr', 'pos'])
-        results_df.reset_index(inplace=True, drop=True)
-        results_df['i'] = results_df.index
-
-        alpha = -np.log10(0.05/len(pvals))
-        sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'])
-        plt.axline((0,alpha), slope=0, color='red')
-        chrom_df=results_df.groupby('chr')['i'].median()
-        plt.xlabel('chr') 
-        plt.xticks(chrom_df,chrom_df.index)
-        plt.ylabel('$-\log_{10}(p)$')
-        plt.show()
-        plt.clf()
-
-        pvals = np.sort(data_results['p_lrt'])
-
-        plt.scatter(y=-np.log10(pvals), x=-np.log10(theoretical))
-        plt.axline((0,0), slope=1, color='red')
-        plt.xlabel('Theoretical: $-\log_{10}(p)$')
-        plt.ylabel('Observed: $-\log_{10}(p)$')
-        plt.show()
-        plt.clf()
-
-        # Manhatten plot adapted from https://stackoverflow.com/a/66062857
-        results_df = pd.DataFrame(
-            {
-            'pos'  : snps['POS'].values[sample],
-            'pval' : -np.log10(data_results['p_lrt']),
             'chr' : snps['CHR'].values[sample]
             }
         )

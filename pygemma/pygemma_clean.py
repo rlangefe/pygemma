@@ -1,60 +1,40 @@
 import numpy as np
 import pandas as pd
 from rich.progress import track
-from rich.console import Console
 
 from scipy import optimize, stats
 
-import time
-
 #from pygemma import pygemma_model
 
-def pygemma(Y, X, W, K, snps=None, verbose=0):
-    console = Console()
-
+def pygemma(Y, X, W, K, verbose=0):
     results_dict = {
-                        'beta'       : [],
-                        'se_beta'    : [],
-                        'tau'        : [],
-                        'lambda'     : [],
-                        'D_lrt'      : [],
-                        'p_lrt'      : [],
-                        'F_wald'     : [],
-                        'p_wald'     : [],
-                        'likelihood' : []
+                        'beta'    : [],
+                        'se_beta' : [],
+                        'tau'     : [],
+                        'lambda'  : [],
+                        #'D_lrt'   : [],
+                        #'p_lrt'   : [],
+                        'F_wald'  : [],
+                        'p_wald'  : []
                     }
-    with console.status(f"[bold green]Running null model...") as status:
 
-        start = time.time()
-        eigenVals, U = np.linalg.eig(K) # Perform eigendecomposition
+    eigenVals, U = np.linalg.eig(K) # Perform eigendecomposition
 
-        eigenVals = np.maximum(0, eigenVals)
+    eigenVals = np.maximum(0, eigenVals)
 
-        assert (eigenVals >= 0).all()
-        console.log(f"[green]Eigendecomposition computed - {round(time.time() - start,3)} s")
+    assert (eigenVals >= 0).all()
 
-        start = time.time()
-        X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
-        console.log(f"[green]Genotype matrix centered - {round(time.time() - start,3)} s")
+    X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
 
-        # Calculate under null
-        n, c = W.shape
+    # Calculate under null
+    #lambda_null = calc_lambda_restricted(eigenVals, U, Y, W, None)
+    #_, _, tau = calc_beta_vg_ve_restricted(eigenVals, U, W, None, lambda_null, Y)
+    #l_null = likelihood_restricted(lambda_null, tau, eigenVals, U, Y, W, None)
 
-        start = time.time()
-        lambda_null = calc_lambda_restricted(eigenVals, U, Y, W)
-        console.log(f"[green]Null lambda computed: {round(lambda_null, 5)} - {round(time.time() - start,3)} s")
-
-        start = time.time()
-        tau_null = float((n - c) / (Y.T @ compute_Pc(eigenVals, U, W, lambda_null) @ Y))
-        console.log(f"[green]Null tau computed: {round(tau_null, 5)} - {round(time.time() - start,3)} s")
-
-        start = time.time()
-        l_null = likelihood_restricted(lambda_null, tau_null, eigenVals, U, Y, W)
-        console.log(f"[green]Null likelihood computed: {round(l_null, 5)} - {round(time.time() - start,3)} s")
-
+    n, c = W.shape
 
     if verbose > 0:
-        progress_bar = track(range(X.shape[1]), description='Testing SNPs...')
+        progress_bar = track(range(X.shape[1]), description='Fitting Models...')
     else:
         progress_bar = range(X.shape[1])
 
@@ -66,7 +46,7 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
         l_alt = likelihood_restricted(lambda_restricted, tau, eigenVals, U, Y, np.c_[W, X[:,g]])
 
         F_wald = np.power(beta/se_beta, 2.0)
-        D_lrt = 2 * (np.log10(np.abs(l_alt)) - np.log10(np.abs(l_null)))
+        #D_lrt = 2 * np.log10(l_alt/l_null)
 
         # Store values
         results_dict['beta'].append(beta)
@@ -74,25 +54,21 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
         results_dict['tau'].append(tau)
         results_dict['lambda'].append(lambda_restricted)
         results_dict['F_wald'].append(F_wald)
-        results_dict['p_wald'].append(1-stats.f.cdf(x=F_wald, dfn=1, dfd=n-c-1))
-        results_dict['D_lrt'].append(D_lrt)
-        results_dict['p_lrt'].append(1-stats.chi2.cdf(x=D_lrt, df=1))
-        results_dict['likelihood'].append(l_alt)
+        results_dict['p_wald'].append(1-stats.chi2.cdf(x=F_wald, df=1))
+        #results_dict['D_lrt'].append(D_lrt)
+        #results_dict['p_lrt'].append(1-stats.f.cdf(x=D_lrt, dfn=1, dfd=n-c-1))
 
 
     results_df = pd.DataFrame.from_dict(results_dict)
 
-    if snps is not None:
-        results_df['SNPs'] = snps
-
     return results_df
 
 def calc_beta_vg_ve(eigenVals, U, W, x, lam, Y):
-    W_x = np.c_[W,x]
-    Px = compute_Pc(eigenVals, U, W_x, lam)
+    Px = compute_Pc(eigenVals, U, W, lam)
     
     n, c = W.shape
 
+    W_x = np.c_[W,x]
 
     W_xt_Px = W_x.T @ Px
     beta_vec = np.linalg.inv(W_xt_Px @ W_x) @ (W_xt_Px @ Y)
@@ -239,7 +215,7 @@ def likelihood_restricted(lam, tau, eigenVals, U, Y, W):
     H_inv = U @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U.T
 
     result = 0.5*(n - c)*np.log(tau)
-    result = result - 0.5*(n - c)*np.log(2*np.pi)
+    result = result - 0.5*(n - c - 1)*np.log(2*np.pi)
     _, logdet = np.linalg.slogdet(W.T @ W)
     result = result + 0.5*logdet
 
@@ -259,7 +235,7 @@ def likelihood_restricted_lambda(lam, eigenVals, U, Y, W):
     H_inv = U @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U.T
 
     result = 0.5*(n - c)*np.log(0.5*(n - c)/np.pi)
-    result = result - 0.5*(n - c)
+    result = result - 0.5*(n - c - 1)
     _, logdet = np.linalg.slogdet(W.T @ W)
     result = result + 0.5*logdet
     
@@ -342,7 +318,7 @@ def calc_lambda_restricted(eigenVals, U, Y, W):
         
         
 
-    likelihood_list = [likelihood_restricted_lambda(lam, eigenVals, U, Y, W) for lam in roots]
+    likelihood_list = [likelihood_restricted_lambda(lam, eigenVals, U, Y, W, x) for lam in roots]
 
     return roots[np.argmax(likelihood_list)]
 

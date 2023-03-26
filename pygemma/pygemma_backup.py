@@ -1,72 +1,52 @@
 import numpy as np
 import pandas as pd
 from rich.progress import track
-from rich.console import Console
 
 from scipy import optimize, stats
 
-import time
-
 #from pygemma import pygemma_model
 
-def pygemma(Y, X, W, K, snps=None, verbose=0):
-    console = Console()
-
+def pygemma(Y, X, W, K, verbose=0):
     results_dict = {
-                        'beta'       : [],
-                        'se_beta'    : [],
-                        'tau'        : [],
-                        'lambda'     : [],
-                        'D_lrt'      : [],
-                        'p_lrt'      : [],
-                        'F_wald'     : [],
-                        'p_wald'     : [],
-                        'likelihood' : []
+                        'beta'    : [],
+                        'se_beta' : [],
+                        'tau'     : [],
+                        'lambda'  : [],
+                        #'D_lrt'   : [],
+                        #'p_lrt'   : [],
+                        'F_wald'  : [],
+                        'p_wald'  : []
                     }
-    with console.status(f"[bold green]Running null model...") as status:
 
-        start = time.time()
-        eigenVals, U = np.linalg.eig(K) # Perform eigendecomposition
+    eigenVals, U = np.linalg.eig(K) # Perform eigendecomposition
 
-        eigenVals = np.maximum(0, eigenVals)
+    eigenVals = np.maximum(0, eigenVals)
 
-        assert (eigenVals >= 0).all()
-        console.log(f"[green]Eigendecomposition computed - {round(time.time() - start,3)} s")
+    assert (eigenVals >= 0).all()
 
-        start = time.time()
-        X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
-        console.log(f"[green]Genotype matrix centered - {round(time.time() - start,3)} s")
+    X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
 
-        # Calculate under null
-        n, c = W.shape
+    # Calculate under null
+    #lambda_null = calc_lambda_restricted(eigenVals, U, Y, W, None)
+    #_, _, tau = calc_beta_vg_ve_restricted(eigenVals, U, W, None, lambda_null, Y)
+    #l_null = likelihood_restricted(lambda_null, tau, eigenVals, U, Y, W, None)
 
-        start = time.time()
-        lambda_null = calc_lambda_restricted(eigenVals, U, Y, W)
-        console.log(f"[green]Null lambda computed: {round(lambda_null, 5)} - {round(time.time() - start,3)} s")
-
-        start = time.time()
-        tau_null = float((n - c) / (Y.T @ compute_Pc(eigenVals, U, W, lambda_null) @ Y))
-        console.log(f"[green]Null tau computed: {round(tau_null, 5)} - {round(time.time() - start,3)} s")
-
-        start = time.time()
-        l_null = likelihood_restricted(lambda_null, tau_null, eigenVals, U, Y, W)
-        console.log(f"[green]Null likelihood computed: {round(l_null, 5)} - {round(time.time() - start,3)} s")
-
+    n, c = W.shape
 
     if verbose > 0:
-        progress_bar = track(range(X.shape[1]), description='Testing SNPs...')
+        progress_bar = track(range(X.shape[1]), description='Fitting Models...')
     else:
         progress_bar = range(X.shape[1])
 
     for g in progress_bar:
-        lambda_restricted = calc_lambda_restricted(eigenVals, U, Y, np.c_[W, X[:,g]])
+        lambda_restricted = calc_lambda_restricted(eigenVals, U, Y, W, X[:,g])
         beta, se_beta, tau = calc_beta_vg_ve_restricted(eigenVals, U, W, X[:,g], lambda_restricted, Y)
 
         # Fix these calculations later
-        l_alt = likelihood_restricted(lambda_restricted, tau, eigenVals, U, Y, np.c_[W, X[:,g]])
+        l_alt = likelihood_restricted(lambda_restricted, tau, eigenVals, U, Y, W, X[:,g])
 
         F_wald = np.power(beta/se_beta, 2.0)
-        D_lrt = 2 * (np.log10(np.abs(l_alt)) - np.log10(np.abs(l_null)))
+        #D_lrt = 2 * np.log10(l_alt/l_null)
 
         # Store values
         results_dict['beta'].append(beta)
@@ -74,25 +54,20 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
         results_dict['tau'].append(tau)
         results_dict['lambda'].append(lambda_restricted)
         results_dict['F_wald'].append(F_wald)
-        results_dict['p_wald'].append(1-stats.f.cdf(x=F_wald, dfn=1, dfd=n-c-1))
-        results_dict['D_lrt'].append(D_lrt)
-        results_dict['p_lrt'].append(1-stats.chi2.cdf(x=D_lrt, df=1))
-        results_dict['likelihood'].append(l_alt)
+        results_dict['p_wald'].append(1-stats.chi2.cdf(x=F_wald, df=1))
+        #results_dict['D_lrt'].append(D_lrt)
+        #results_dict['p_lrt'].append(1-stats.f.cdf(x=D_lrt, dfn=1, dfd=n-c-1))
 
 
     results_df = pd.DataFrame.from_dict(results_dict)
 
-    if snps is not None:
-        results_df['SNPs'] = snps
-
     return results_df
 
 def calc_beta_vg_ve(eigenVals, U, W, x, lam, Y):
+    Px = compute_Px(eigenVals, U, W, x, lam)
     W_x = np.c_[W,x]
-    Px = compute_Pc(eigenVals, U, W_x, lam)
-    
-    n, c = W.shape
 
+    n, c = W.shape
 
     W_xt_Px = W_x.T @ Px
     beta_vec = np.linalg.inv(W_xt_Px @ W_x) @ (W_xt_Px @ Y)
@@ -107,10 +82,10 @@ def calc_beta_vg_ve(eigenVals, U, W, x, lam, Y):
     return beta, se_beta, tau
 
 def calc_beta_vg_ve_restricted(eigenVals, U, W, x, lam, Y):
-    W_x = np.c_[W,x]
-
-    Px = compute_Pc(eigenVals, U, W_x, lam)
+    Px = compute_Px(eigenVals, U, W, x, lam)
     Pc = compute_Pc(eigenVals, U, W, lam)
+
+    W_x = np.c_[W,x]
 
     n, c = W.shape
 
@@ -126,13 +101,19 @@ def calc_beta_vg_ve_restricted(eigenVals, U, W, x, lam, Y):
 
     return float(beta), float(se_beta), float(tau)
 
+def compute_Px(eigenVals, U, W, x, lam):
+    H_inv = U.T @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U
+    W_x = np.c_[W, x]
+
+    return H_inv - H_inv @ W_x @ np.linalg.inv(W_x.T @ H_inv @ W_x) @ W_x.T @ H_inv
+
 def compute_Pc(eigenVals, U, W, lam):
     H_inv = U.T @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U
     W_x = W
 
     return H_inv - H_inv @ W_x @ np.linalg.inv(W_x.T @ H_inv @ W_x) @ W_x.T @ H_inv
 
-def likelihood_lambda(lam, eigenVals, U, Y, W):
+def likelihood_lambda(lam, eigenVals, U, Y, W, x):
     n = Y.shape[0]
 
     result = (n/2)*np.log(n/(2*np.pi))
@@ -141,16 +122,16 @@ def likelihood_lambda(lam, eigenVals, U, Y, W):
 
     result = result - 0.5*np.sum(np.log(lam*eigenVals + 1.0))
 
-    result = result - (n/2)*np.log(Y.T @ compute_Pc(eigenVals, U, W, lam) @ Y)
+    result = result - (n/2)*np.log(Y.T @ compute_Px(eigenVals, U, W, x, lam) @ Y)
 
     return float(result)
 
-def likelihood_derivative1_lambda(lam, eigenVals, U, Y, W):
+def likelihood_derivative1_lambda(lam, eigenVals, U, Y, W, x):
     n = Y.shape[0]
 
     result = -0.5*((n-np.sum(1/(lam*eigenVals + 1.0)))/lam)
 
-    Px = compute_Pc(eigenVals, U, W, lam)
+    Px = compute_Px(eigenVals, U, W, x, lam)
 
     yT_Px_y = Y.T @ Px @ Y
 
@@ -160,12 +141,12 @@ def likelihood_derivative1_lambda(lam, eigenVals, U, Y, W):
 
     return float(result)
 
-def likelihood_derivative2_lambda(lam, eigenVals, U, Y, W): 
+def likelihood_derivative2_lambda(lam, eigenVals, U, Y, W, x): 
     n = Y.shape[0]
 
     result = 0.5*(n + np.sum(np.power(lam*eigenVals + 1.0, -2)) + 2*np.sum(np.power(lam*eigenVals + 1.0,-1)))
 
-    Px = compute_Pc(eigenVals, U, W, lam)
+    Px = compute_Px(eigenVals, U, W, x, lam)
 
     yT_Px_y = Y.T @ Px @ Y
 
@@ -179,27 +160,27 @@ def likelihood_derivative2_lambda(lam, eigenVals, U, Y, W):
 
     return float(result)
 
-def likelihood_derivative1_restricted_lambda(lam, eigenVals, U, Y, W):
+def likelihood_derivative1_restricted_lambda(lam, eigenVals, U, Y, W, x):
     n = W.shape[0]
     c = W.shape[1]
 
-    Px = compute_Pc(eigenVals, U, W, lam)
+    Px = compute_Px(eigenVals, U, W, x, lam)
 
-    result = -0.5*((n-c - np.trace(Px))/lam)
+    result = -0.5*((n-c-1 - np.trace(Px))/lam)
 
     yT_Px_y = Y.T @ Px @ Y
 
     yT_Px_G_Px_y = (yT_Px_y - (Y.T @ Px) @ (Px @ Y))/lam
 
-    result = result - 0.5*(n - c)*yT_Px_G_Px_y/yT_Px_y
+    result = result - 0.5*(n - c - 1)*yT_Px_G_Px_y/yT_Px_y
 
     return float(result)
 
-def likelihood_derivative2_restricted_lambda(lam, eigenVals, U, Y, W): 
+def likelihood_derivative2_restricted_lambda(lam, eigenVals, U, Y, W, x): 
     n = Y.shape[0]
     c = W.shape[1]
 
-    Px = compute_Pc(eigenVals, U, W, lam)
+    Px = compute_Px(eigenVals, U, W, x, lam)
 
     yT_Px_y = Y.T @ Px @ Y
 
@@ -209,14 +190,16 @@ def likelihood_derivative2_restricted_lambda(lam, eigenVals, U, Y, W):
 
     yT_Px_G_Px_y = (yT_Px_y - yT_Px_Px_y)/lam
 
-    result = 0.5*(n - c + np.trace(Px @ Px) - 2*np.trace(Px))/(lam*lam)
+    result = 0.5*(n - c - 1 + np.trace(Px @ Px) - 2*np.trace(Px))/(lam*lam)
 
-    result = result - (n - c) * (yT_Px_G_Px_G_Px_y @ yT_Px_y - yT_Px_G_Px_y @ yT_Px_G_Px_y) / (yT_Px_y * yT_Px_y)
+    result = result - (n - c - 1) * (yT_Px_G_Px_G_Px_y @ yT_Px_y - yT_Px_G_Px_y @ yT_Px_G_Px_y) / (yT_Px_y * yT_Px_y)
 
     return float(result)
 
-def likelihood(lam, tau, beta, eigenVals, U, Y, W):
+def likelihood(lam, tau, beta, eigenVals, U, Y, W, x):
     n = W.shape[0]
+
+    W_x = np.c_[W,x]
 
     H_inv = U @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U.T
 
@@ -225,56 +208,60 @@ def likelihood(lam, tau, beta, eigenVals, U, Y, W):
     
     result = result - 0.5 * np.sum(np.log(lam*eigenVals + 1.0))
 
-    y_W_beta = Y - W @ beta
+    y_Wx_beta = Y - W_x @ beta
 
-    result = result - 0.5 * tau * y_W_beta.T @ H_inv @ y_W_beta
+    result = result - 0.5 * tau * y_Wx_beta.T @ H_inv @ y_Wx_beta
 
 
     return float(result)
 
-def likelihood_restricted(lam, tau, eigenVals, U, Y, W):
-    n = W.shape[0]
+def likelihood_restricted(lam, tau, eigenVals, U, Y, W, x):
+    W_x = np.c_[W,x]
+
+    n = W_x.shape[0]
     c = W.shape[1]
 
     H_inv = U @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U.T
 
-    result = 0.5*(n - c)*np.log(tau)
-    result = result - 0.5*(n - c)*np.log(2*np.pi)
-    _, logdet = np.linalg.slogdet(W.T @ W)
+    result = 0.5*(n - c - 1)*np.log(tau)
+    result = result - 0.5*(n - c - 1)*np.log(2*np.pi)
+    _, logdet = np.linalg.slogdet(W_x.T @ W_x)
     result = result + 0.5*logdet
 
     result = result - 0.5 * np.sum(np.log(lam*eigenVals + 1.0))
 
     #result = result - 0.5*np.log(np.linalg.det(W_x.T @ H_inv @ W_x)) # Causing NAN
-    _, logdet = np.linalg.slogdet(W.T @ H_inv @ W)
+    _, logdet = np.linalg.slogdet(W_x.T @ H_inv @ W_x)
     result = result - 0.5*logdet # Causing NAN
 
-    result = result - 0.5*(n - c)*np.log(Y.T @ compute_Pc(eigenVals, U, W, lam) @ Y)
+    result = result - 0.5*(n - c - 1)*np.log(Y.T @ compute_Px(eigenVals, U, W, x, lam) @ Y)
 
     return float(result)
 
-def likelihood_restricted_lambda(lam, eigenVals, U, Y, W):
+def likelihood_restricted_lambda(lam, eigenVals, U, Y, W, x):
     n, c = W.shape
+
+    W_x = np.c_[W,x]
 
     H_inv = U @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U.T
 
-    result = 0.5*(n - c)*np.log(0.5*(n - c)/np.pi)
-    result = result - 0.5*(n - c)
-    _, logdet = np.linalg.slogdet(W.T @ W)
+    result = 0.5*(n - c - 1)*np.log(0.5*(n - c - 1)/np.pi)
+    result = result - 0.5*(n - c - 1)
+    _, logdet = np.linalg.slogdet(W_x.T @ W_x)
     result = result + 0.5*logdet
     
     result = result - 0.5 * np.sum(np.log(lam*eigenVals + 1.0))
 
     #result = result - 0.5*np.log(np.linalg.det(W_x.T @ H_inv @ W_x)) # Causing NAN
-    _, logdet = np.linalg.slogdet(W.T @ H_inv @ W)
+    _, logdet = np.linalg.slogdet(W_x.T @ H_inv @ W_x)
     result = result - 0.5*logdet # Causing NAN
 
-    result = result - 0.5*(n - c)*np.log(Y.T @ compute_Pc(eigenVals, U, W, lam) @ Y)
+    result = result - 0.5*(n - c - 1)*np.log(Y.T @ compute_Px(eigenVals, U, W, x, lam) @ Y)
 
     return float(result)
 
 
-def calc_lambda(eigenVals, U, Y, W):
+def calc_lambda(eigenVals, U, Y, W, x):
     # Loop over intervals and find where likelihood changes signs with respect to lambda
     step = 1.0
 
@@ -287,30 +274,30 @@ def calc_lambda(eigenVals, U, Y, W):
     
     for lambda0, lambda1 in lambda_possible:
     
-        likelihood_lambda0 = likelihood_derivative1_lambda(lambda0, eigenVals, U, Y, W)
-        likelihood_lambda1 = likelihood_derivative1_lambda(lambda1, eigenVals, U, Y, W)
+        likelihood_lambda0 = likelihood_derivative1_lambda(lambda0, eigenVals, U, Y, W, x)
+        likelihood_lambda1 = likelihood_derivative1_lambda(lambda1, eigenVals, U, Y, W, x)
 
         if np.sign(likelihood_lambda0) * np.sign(likelihood_lambda1) < 0:
-            lambda_min = optimize.brentq(f=lambda l: likelihood_derivative1_lambda(l, eigenVals, U, Y, W), 
+            lambda_min = optimize.brentq(f=lambda l: likelihood_derivative1_lambda(l, eigenVals, U, Y, W, x), 
                                                 a=lambda0, 
                                                 b=lambda1,
                                                 xtol=0.1,
                                                 maxiter=5000)
             
-            lambda_min = optimize.newton(func=lambda l: likelihood_derivative1_lambda(l, eigenVals, U, Y, W), 
+            lambda_min = optimize.newton(func=lambda l: likelihood_derivative1_lambda(l, eigenVals, U, Y, W, x), 
                                          x0=lambda_min,
-                                         fprime=lambda l: likelihood_derivative2_lambda(l, eigenVals, U, Y, W),
+                                         fprime=lambda l: likelihood_derivative2_lambda(l, eigenVals, U, Y, W, x),
                                          maxiter=100)
             
             roots.append(lambda_min)
             
 
 
-    likelihood_list = [likelihood_lambda(lam, eigenVals, U, Y, W) for lam in roots]
+    likelihood_list = [likelihood_lambda(lam, eigenVals, U, Y, W, x) for lam in roots]
 
     return roots[np.argmax(likelihood_list)]
 
-def calc_lambda_restricted(eigenVals, U, Y, W):
+def calc_lambda_restricted(eigenVals, U, Y, W, x):
     # Loop over intervals and find where likelihood changes signs with respect to lambda
     step = 1.0
 
@@ -322,27 +309,27 @@ def calc_lambda_restricted(eigenVals, U, Y, W):
     roots = [np.power(10.0, lambda_pow_low), np.power(10.0, lambda_pow_high)]
     
     for lambda0, lambda1 in lambda_possible:
-        likelihood_lambda0 = likelihood_derivative1_restricted_lambda(lambda0, eigenVals, U, Y, W)
-        likelihood_lambda1 = likelihood_derivative1_restricted_lambda(lambda1, eigenVals, U, Y, W)
+        likelihood_lambda0 = likelihood_derivative1_restricted_lambda(lambda0, eigenVals, U, Y, W, x)
+        likelihood_lambda1 = likelihood_derivative1_restricted_lambda(lambda1, eigenVals, U, Y, W, x)
 
         if np.sign(likelihood_lambda0) * np.sign(likelihood_lambda1) < 0:
-            lambda_min = optimize.brentq(f=lambda l: likelihood_derivative1_restricted_lambda(l, eigenVals, U, Y, W), 
+            lambda_min = optimize.brentq(f=lambda l: likelihood_derivative1_restricted_lambda(l, eigenVals, U, Y, W, x), 
                                                 a=lambda0,
                                                 b=lambda1,
                                                 tol=0.1,
                                                 maxiter=5000)
         
-            lambda_min = optimize.newton(func=lambda l: likelihood_derivative1_restricted_lambda(l, eigenVals, U, Y, W), 
+            lambda_min = optimize.newton(func=lambda l: likelihood_derivative1_restricted_lambda(l, eigenVals, U, Y, W, x), 
                                          x0=lambda_min,
                                          tol=0.1,
-                                         fprime=lambda l: likelihood_derivative2_restricted_lambda(l, eigenVals, U, Y, W),
+                                         fprime=lambda l: likelihood_derivative2_restricted_lambda(l, eigenVals, U, Y, W, x),
                                          maxiter=100)
             
             roots.append(lambda_min)
         
         
 
-    likelihood_list = [likelihood_restricted_lambda(lam, eigenVals, U, Y, W) for lam in roots]
+    likelihood_list = [likelihood_restricted_lambda(lam, eigenVals, U, Y, W, x) for lam in roots]
 
     return roots[np.argmax(likelihood_list)]
 
