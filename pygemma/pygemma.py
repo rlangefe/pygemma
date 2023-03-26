@@ -7,7 +7,20 @@ from scipy import optimize, stats
 
 import time
 
-#from pygemma import pygemma_model
+try:
+    import pygemma_model
+    print("Using Cython version of pyGEMMA")
+
+    compute_Pc = pygemma_model.compute_Pc
+
+except ImportError:
+    print("Cython not available, using Python version of pyGEMMA")
+
+    def compute_Pc(eigenVals, U, W, lam):
+        H_inv = U.T @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U
+        W_x = W
+
+        return H_inv - H_inv @ W_x @ np.linalg.inv(W_x.T @ H_inv @ W_x) @ W_x.T @ H_inv
 
 def pygemma(Y, X, W, K, snps=None, verbose=0):
     console = Console()
@@ -125,12 +138,6 @@ def calc_beta_vg_ve_restricted(eigenVals, U, W, x, lam, Y):
     tau = (n-c-1)/ytPxy
 
     return float(beta), float(se_beta), float(tau)
-
-def compute_Pc(eigenVals, U, W, lam):
-    H_inv = U.T @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U
-    W_x = W
-
-    return H_inv - H_inv @ W_x @ np.linalg.inv(W_x.T @ H_inv @ W_x) @ W_x.T @ H_inv
 
 def likelihood_lambda(lam, eigenVals, U, Y, W):
     n = Y.shape[0]
