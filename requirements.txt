@@ -1,7 +1,11 @@
 numpy
-pandas
+cppy
+kiwisolver==1.0.1
+pandas==1.1.0
 seaborn
-matplotlib
+pillow<=8.4
+matplotlib<=3.3
 rich
-scikit-learn
+scikit-learn<1.0
 Cython
+scipy<=1.5
