@@ -174,7 +174,7 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
         l_alt = likelihood_restricted(lambda_restricted, tau, eigenVals, U, Y, np.c_[W, X[:,g]])
 
         F_wald = np.power(beta/se_beta, 2.0)
-        D_lrt = 2 * (np.log10(np.abs(l_alt)) - np.log10(np.abs(l_null)))
+        D_lrt = 2 * (l_alt - l_null)
 
         # Store values
         results_dict['beta'].append(beta)
