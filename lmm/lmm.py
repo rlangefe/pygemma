@@ -22,6 +22,8 @@ def calc_lambda(eigenVals, U, Y, W):
     lambda_possible = [(np.power(10.0, i), np.power(10.0, i+step)) for i in np.arange(lambda_pow_low,lambda_pow_high,step)]
 
     roots = [np.power(10.0, lambda_pow_low), np.power(10.0, lambda_pow_high)]
+    r_brent = [True, True]
+    r_newton = [True, True]
     
     for lambda0, lambda1 in lambda_possible:
     
@@ -29,24 +31,29 @@ def calc_lambda(eigenVals, U, Y, W):
         likelihood_lambda1 = likelihood_derivative1_lambda(lambda1, eigenVals, U, Y, W)
 
         if np.sign(likelihood_lambda0) * np.sign(likelihood_lambda1) < 0:
-            lambda_min = optimize.brentq(f=lambda l: likelihood_derivative1_lambda(l, eigenVals, U, Y, W), 
+            lambda_min, r_brent_res = optimize.brentq(f=lambda l: likelihood_derivative1_lambda(l, eigenVals, U, Y, W), 
                                                 a=lambda0, 
                                                 b=lambda1,
-                                                xtol=0.1,
-                                                maxiter=5000)
+                                                xtol=1e-1,
+                                                maxiter=5000,
+                                                full_output=True)
             
-            lambda_min = optimize.newton(func=lambda l: likelihood_derivative1_lambda(l, eigenVals, U, Y, W), 
+            lambda_min, r_newton_res = optimize.newton(func=lambda l: likelihood_derivative1_lambda(l, eigenVals, U, Y, W), 
                                         x0=lambda_min,
+                                        tol=1e-5,
                                         fprime=lambda l: likelihood_derivative2_lambda(l, eigenVals, U, Y, W),
-                                        maxiter=100)
+                                        maxiter=100,
+                                        full_output=True)
             
             roots.append(lambda_min)
+            r_brent.append(r_brent_res.converged)
+            r_newton.append(r_newton_res.converged)
             
 
 
     likelihood_list = [likelihood_lambda(lam, eigenVals, U, Y, W) for lam in roots]
 
-    return roots[np.argmax(likelihood_list)]
+    return roots[np.argmax(likelihood_list)], r_brent[np.argmax(likelihood_list)], r_newton[np.argmax(likelihood_list)]
 
 def calc_lambda_restricted(eigenVals, U, Y, W):
     # Loop over intervals and find where likelihood changes signs with respect to lambda
@@ -58,31 +65,37 @@ def calc_lambda_restricted(eigenVals, U, Y, W):
     lambda_possible = [(np.power(10.0, i), np.power(10.0, i+step)) for i in np.arange(lambda_pow_low,lambda_pow_high,step)]
 
     roots = [np.power(10.0, lambda_pow_low), np.power(10.0, lambda_pow_high)]
+    r_brent = [True, True]
+    r_newton = [True, True]
     
     for lambda0, lambda1 in lambda_possible:
         likelihood_lambda0 = likelihood_derivative1_restricted_lambda(lambda0, eigenVals, U, Y, W)
         likelihood_lambda1 = likelihood_derivative1_restricted_lambda(lambda1, eigenVals, U, Y, W)
 
         if np.sign(likelihood_lambda0) * np.sign(likelihood_lambda1) < 0:
-            lambda_min = optimize.brentq(f=lambda l: likelihood_derivative1_restricted_lambda(l, eigenVals, U, Y, W), 
+            lambda_min, r_brent_res = optimize.brentq(f=lambda l: likelihood_derivative1_restricted_lambda(l, eigenVals, U, Y, W), 
                                                 a=lambda0,
                                                 b=lambda1,
-                                                tol=0.1,
-                                                maxiter=5000)
+                                                tol=1e-1,
+                                                maxiter=5000,
+                                                full_output=True)
         
-            lambda_min = optimize.newton(func=lambda l: likelihood_derivative1_restricted_lambda(l, eigenVals, U, Y, W), 
+            lambda_min, r_newton_res = optimize.newton(func=lambda l: likelihood_derivative1_restricted_lambda(l, eigenVals, U, Y, W), 
                                         x0=lambda_min,
-                                        tol=0.1,
+                                        tol=1e-5,
                                         fprime=lambda l: likelihood_derivative2_restricted_lambda(l, eigenVals, U, Y, W),
-                                        maxiter=100)
+                                        maxiter=100,
+                                        full_output=True)
             
             roots.append(lambda_min)
+            r_brent.append(r_brent_res.converged)
+            r_newton.append(r_newton_res.converged)
         
         
 
     likelihood_list = [likelihood_restricted_lambda(lam, eigenVals, U, Y, W) for lam in roots]
 
-    return roots[np.argmax(likelihood_list)]
+    return roots[np.argmax(likelihood_list)], r_brent[np.argmax(likelihood_list)], r_newton[np.argmax(likelihood_list)]
 
 
 
@@ -98,15 +111,17 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
     X = X.astype(np.float32)
 
     results_dict = {
-                        'beta'       : [],
-                        'se_beta'    : [],
-                        'tau'        : [],
-                        'lambda'     : [],
-                        'D_lrt'      : [],
-                        'p_lrt'      : [],
-                        'F_wald'     : [],
-                        'p_wald'     : [],
-                        'likelihood' : []
+                        'beta'              : [],
+                        'se_beta'           : [],
+                        'tau'               : [],
+                        'lambda'            : [],
+                        'Brent_Converged'   : [],
+                        'Newton_Converged'  : [],
+                        'D_lrt'             : [],
+                        'p_lrt'             : [],
+                        'F_wald'            : [],
+                        'p_wald'            : [],
+                        'likelihood'        : []
                     }
     if verbose > 0:
         with console.status(f"[bold green]Running null model...") as status:
@@ -129,8 +144,8 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
             n, c = W.shape
 
             start = time.time()
-            lambda_null = calc_lambda_restricted(eigenVals, U, Y, W)
-            console.log(f"[green]Null lambda computed: {round(lambda_null, 5)} - {round(time.time() - start,3)} s")
+            lambda_null, null_brent, null_newton = calc_lambda_restricted(eigenVals, U, Y, W)
+            console.log(f"[green]Null lambda computed: {round(lambda_null, 5)}, Brent Converged={null_brent}, Newton Converged={null_newton} - {round(time.time() - start,3)} s")
 
             start = time.time()
             tau_null = float((n - c) / (Y.T @ compute_Pc(eigenVals, U, W, lambda_null) @ Y))
@@ -154,7 +169,7 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
         # Calculate under null
         n, c = W.shape
 
-        lambda_null = calc_lambda_restricted(eigenVals, U, Y, W)
+        lambda_null, null_brent, null_newton = calc_lambda_restricted(eigenVals, U, Y, W)
 
         tau_null = float((n - c) / (Y.T @ compute_Pc(eigenVals, U, W, lambda_null) @ Y))
 
@@ -167,7 +182,7 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
         progress_bar = range(X.shape[1])
 
     for g in progress_bar:
-        lambda_restricted = calc_lambda_restricted(eigenVals, U, Y, np.c_[W, X[:,g]])
+        lambda_restricted, brent_c, newton_c = calc_lambda_restricted(eigenVals, U, Y, np.c_[W, X[:,g]])
         beta, se_beta, tau = calc_beta_vg_ve_restricted(eigenVals, U, W, X[:,g], lambda_restricted, Y)
 
         # Fix these calculations later
@@ -181,6 +196,8 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
         results_dict['se_beta'].append(se_beta)
         results_dict['tau'].append(tau)
         results_dict['lambda'].append(lambda_restricted)
+        results_dict['Brent_Converged'].append(brent_c)
+        results_dict['Newton_Converged'].append(newton_c)
         results_dict['F_wald'].append(F_wald)
         results_dict['p_wald'].append(1-stats.f.cdf(x=F_wald, dfn=1, dfd=n-c-1))
         results_dict['D_lrt'].append(D_lrt)

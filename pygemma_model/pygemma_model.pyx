@@ -6,6 +6,8 @@ from scipy import optimize, stats
 
 @cython.boundscheck(False) # compiler directive
 @cython.wraparound(False) # compiler directive
+@cython.nonecheck(False)
+@cython.cdivision(True)
 def compute_Pc(
                 np.ndarray[np.float32_t, ndim=1] eigenVals, 
                 np.ndarray[np.float32_t, ndim=2] U, 
