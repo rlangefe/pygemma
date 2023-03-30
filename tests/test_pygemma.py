@@ -118,13 +118,13 @@ for dataset in dataset_list:
     n,p = X.shape
 
     if not dataset['kinship']:
-        K = X @ X.T / (p-1)
+        K = X @ X.T / (n-1)
 
     pca = PCA(n_components=2)
 
     pcs = pca.fit_transform(X)
 
-    sample = np.random.choice(range(0,X.shape[1]), size=X.shape[1], replace=False)
+    sample = np.random.choice(range(0,X.shape[1]), size=100, replace=False)
     X = X[:,sample]
     pheno_name = pheno.columns[0]
     Y = pheno[pheno_name].values.reshape(-1,1).astype(np.float32)
