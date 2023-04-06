@@ -11,6 +11,8 @@ import os
 # df in format geneID	beta	se	logl_H1	l_remle	l_mle	p_wald	p_lrt	p_score
 # geneID is chr:pos:ref:alt
 def manhattan_plot(df, output_path):
+    sns.set_theme()
+
     # Parse SNP column where SNP is in the format: chr:pos:ref:alt
     snps_values = df['geneID'].str.split(':', expand=True)
     snps_values.columns = ['CHR', 'POS', 'REF', 'ALT']
@@ -48,6 +50,8 @@ def manhattan_plot(df, output_path):
     plt.clf()
 
 def qq_plot(df, output_path):
+    sns.set_theme()
+
     theoretical = np.linspace(1/len(df),1.0,len(df))
     pvals = np.sort(df['p_wald'])
 
