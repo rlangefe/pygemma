@@ -91,6 +91,8 @@ if __name__ == '__main__':
     plt.axline((0,0), slope=1, color='red')
     plt.xlabel(r'Theoretical: $-\log_{10}(p)$')
     plt.ylabel(r'Observed: $-\log_{10}(p)$')
+    plt.title(f'QQ Plot - {os.path.splitext(os.path.basename(args.phenotype))[0][:-5]}')
+    plt.tight_layout()
     plt.savefig(os.path.join(args.output, "wald_qq.png"))
     plt.clf()
 
@@ -114,11 +116,19 @@ if __name__ == '__main__':
 
     alpha = -np.log10(0.05/len(pvals))
     sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'])
+
+    # Annotate snp with small font if results_df['pval'] above alpha
+    for i, row in results_df.iterrows():
+        if row['pval'] > alpha:
+            plt.annotate(str(row['chr']) + ':' + str(row['pos']), (row['i'], row['pval']), fontsize=6)
+
     plt.axline((0,alpha), slope=0, color='red')
     chrom_df=results_df.groupby('chr')['i'].median()
     plt.xlabel('chr') 
     plt.xticks(chrom_df,chrom_df.index)
     plt.ylabel(r'$-\log_{10}(p)$')
+    plt.title(f'Manhatten Plot - {os.path.splitext(os.path.basename(args.phenotype))[0][:-5]}')
+    plt.tight_layout()
     plt.savefig(os.path.join(args.output, "wald_manhatten.png"))
     plt.clf()
     
