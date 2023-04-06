@@ -3,6 +3,8 @@ import os
 
 import numpy as np
 import pandas as pd
+import qnorm
+
 
 from pygemma import lmm, pygemma_model
 
@@ -16,6 +18,8 @@ from rich.console import Console
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.decomposition import PCA
+
+import warnings
 
 sns.set_theme()
 
@@ -118,7 +122,7 @@ for dataset in dataset_list:
     n,p = X.shape
 
     if not dataset['kinship']:
-        K = X @ X.T / (n-1)
+        K = X @ X.T / p
 
     pca = PCA(n_components=2)
 
@@ -128,7 +132,8 @@ for dataset in dataset_list:
     X = X[:,sample]
     pheno_name = pheno.columns[0]
     Y = pheno[pheno_name].values.reshape(-1,1).astype(np.float32)
-    Y = (Y-np.mean(Y))/np.std(Y)
+    Y = qnorm.quantile_normalize(Y, axis=1)
+    #Y = (Y-np.mean(Y))/np.std(Y)
 
     # Likelihood tests
     x = X[:,0].reshape(-1,1)
@@ -153,19 +158,20 @@ for dataset in dataset_list:
 
     for pheno_name in pheno.columns:
         Y = pheno[pheno_name].values.reshape(-1,1).astype(np.float32)
-        Y = (Y-np.mean(Y))/np.std(Y)
+        #Y = (Y-np.mean(Y))/np.std(Y)
 
         #with console.status(f"[bold green]Running pyGEMMA Tests - {dataset_name}: {pheno_name}...") as status:
+        warnings.filterwarnings("error")
         data_results = lmm.pygemma(Y, X, W, K, snps=snps['SNP'].values[sample], verbose=1)
-        print(data_results.head())
+        print(data_results.head(10))
 
         theoretical = np.linspace(1/len(data_results),1.0,len(data_results))
         pvals = np.sort(data_results['p_wald'])
 
-        plt.scatter(y=-np.log10(pvals), x=-np.log10(theoretical))
+        plt.scatter(y=-np.log10(pvals+1e-20), x=-np.log10(theoretical))
         plt.axline((0,0), slope=1, color='red')
-        plt.xlabel('Theoretical: $-\log_{10}(p)$')
-        plt.ylabel('Observed: $-\log_{10}(p)$')
+        plt.xlabel(r'Theoretical: $-\log_{10}(p)$')
+        plt.ylabel(r'Observed: $-\log_{10}(p)$')
         plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_wald_qq.png"))
         plt.clf()
 
@@ -173,7 +179,7 @@ for dataset in dataset_list:
         results_df = pd.DataFrame(
             {
             'pos'  : snps['POS'].values[sample],
-            'pval' : -np.log10(data_results['p_wald']),
+            'pval' : -np.log10(data_results['p_wald']+1e-20),
             'chr' : snps['CHR'].values[sample]
             }
         )
@@ -188,16 +194,16 @@ for dataset in dataset_list:
         chrom_df=results_df.groupby('chr')['i'].median()
         plt.xlabel('chr') 
         plt.xticks(chrom_df,chrom_df.index)
-        plt.ylabel('$-\log_{10}(p)$')
+        plt.ylabel(r'$-\log_{10}(p)$')
         plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_wald_manhatten.png"))
         plt.clf()
 
         pvals = np.sort(data_results['p_lrt'])
 
-        plt.scatter(y=-np.log10(pvals), x=-np.log10(theoretical))
+        plt.scatter(y=-np.log10(pvals+1e-20), x=-np.log10(theoretical))
         plt.axline((0,0), slope=1, color='red')
-        plt.xlabel('Theoretical: $-\log_{10}(p)$')
-        plt.ylabel('Observed: $-\log_{10}(p)$')
+        plt.xlabel(r'Theoretical: $-\log_{10}(p)$')
+        plt.ylabel(r'Observed: $-\log_{10}(p)$')
         plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_lrt_qq.png"))
         plt.clf()
 
@@ -205,7 +211,7 @@ for dataset in dataset_list:
         results_df = pd.DataFrame(
             {
             'pos'  : snps['POS'].values[sample],
-            'pval' : -np.log10(data_results['p_lrt']),
+            'pval' : -np.log10(data_results['p_lrt']+1e-20),
             'chr' : snps['CHR'].values[sample]
             }
         )
@@ -220,7 +226,14 @@ for dataset in dataset_list:
         chrom_df=results_df.groupby('chr')['i'].median()
         plt.xlabel('chr') 
         plt.xticks(chrom_df,chrom_df.index)
-        plt.ylabel('$-\log_{10}(p)$')
+        plt.ylabel(r'$-\log_{10}(p)$')
         plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_lrt_manhatten.png"))
         plt.clf()
-        break
+
+        plt.scatter(y=-np.log10(data_results['p_wald']+1e-20), x=-np.log10(data_results['p_lrt']+1e-20))
+        plt.axline((0,0), slope=1, color='red')
+        plt.xlabel(r'LRT: $-\log_{10}(p)$')
+        plt.ylabel(r'Wald: $-\log_{10}(p)$')
+        plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_wald_lrt.png"))
+        plt.clf()
+        

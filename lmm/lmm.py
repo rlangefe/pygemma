@@ -32,13 +32,15 @@ def calc_lambda(eigenVals, U, Y, W):
             lambda_min = optimize.brentq(f=lambda l: likelihood_derivative1_lambda(l, eigenVals, U, Y, W), 
                                                 a=lambda0, 
                                                 b=lambda1,
-                                                xtol=0.1,
-                                                maxiter=5000)
+                                                rtol=0.1,
+                                                maxiter=5000,
+                                                disp=False)
             
             lambda_min = optimize.newton(func=lambda l: likelihood_derivative1_lambda(l, eigenVals, U, Y, W), 
                                         x0=lambda_min,
                                         fprime=lambda l: likelihood_derivative2_lambda(l, eigenVals, U, Y, W),
-                                        maxiter=100)
+                                        maxiter=5000,
+                                        disp=False)
             
             roots.append(lambda_min)
             
@@ -67,15 +69,18 @@ def calc_lambda_restricted(eigenVals, U, Y, W):
             lambda_min = optimize.brentq(f=lambda l: likelihood_derivative1_restricted_lambda(l, eigenVals, U, Y, W), 
                                                 a=lambda0,
                                                 b=lambda1,
-                                                tol=0.1,
-                                                maxiter=5000)
-        
-            lambda_min = optimize.newton(func=lambda l: likelihood_derivative1_restricted_lambda(l, eigenVals, U, Y, W), 
-                                        x0=lambda_min,
-                                        tol=0.1,
-                                        fprime=lambda l: likelihood_derivative2_restricted_lambda(l, eigenVals, U, Y, W),
-                                        maxiter=100)
+                                                rtol=0.1,
+                                                maxiter=5000,
+                                                disp=False)
             
+            # TODO: Deal wit lack of convergence
+            lambda_min = optimize.newton(func=lambda l: likelihood_derivative1_restricted_lambda(l, eigenVals, U, Y, W), 
+                                    x0=lambda_min,
+                                    fprime=lambda l: likelihood_derivative2_restricted_lambda(l, eigenVals, U, Y, W),
+                                    maxiter=5000,
+                                    disp=False)
+
+
             roots.append(lambda_min)
         
         
@@ -93,7 +98,7 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
     else:
         verbose = 0
 
-    Y = Y.astype(np.float32)
+    Y = Y.astype(np.float32).reshape(-1,1)
     W = W.astype(np.float32)
     X = X.astype(np.float32)
 
@@ -129,15 +134,19 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
             n, c = W.shape
 
             start = time.time()
-            lambda_null = calc_lambda_restricted(eigenVals, U, Y, W)
+            lambda_null = calc_lambda(eigenVals, U, Y, W)
             console.log(f"[green]Null lambda computed: {round(lambda_null, 5)} - {round(time.time() - start,3)} s")
 
             start = time.time()
-            tau_null = float((n - c) / (Y.T @ compute_Pc(eigenVals, U, W, lambda_null) @ Y))
+            Pc = compute_Pc(eigenVals, U, W, lambda_null)
+    
+            Wt_Pc = W.T @ Pc
+            beta_vec_null = np.linalg.inv(Wt_Pc @ W) @ (Wt_Pc @ Y)
+            tau_null = float(n / (Y.T @ Pc @ Y))
             console.log(f"[green]Null tau computed: {round(tau_null, 5)} - {round(time.time() - start,3)} s")
 
             start = time.time()
-            l_null = likelihood_restricted(lambda_null, tau_null, eigenVals, U, Y, W)
+            l_null = likelihood(lambda_null, tau_null, beta_vec_null, eigenVals, U, Y, W)
             console.log(f"[green]Null likelihood computed: {round(l_null, 5)} - {round(time.time() - start,3)} s")
     else:
         eigenVals, U = np.linalg.eig(K) # Perform eigendecomposition
@@ -146,7 +155,6 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
 
         eigenVals = np.maximum(0, eigenVals)
 
-
         assert (eigenVals >= 0).all()
 
         X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
@@ -154,11 +162,15 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
         # Calculate under null
         n, c = W.shape
 
-        lambda_null = calc_lambda_restricted(eigenVals, U, Y, W)
+        lambda_null = calc_lambda(eigenVals, U, Y, W)
 
-        tau_null = float((n - c) / (Y.T @ compute_Pc(eigenVals, U, W, lambda_null) @ Y))
+        Pc = compute_Pc(eigenVals, U, W, lambda_null)
+    
+        Wt_Pc = W.T @ Pc
+        beta_vec_null = np.linalg.inv(Wt_Pc @ W) @ (Wt_Pc @ Y)
+        tau_null = float(n / (Y.T @ Pc @ Y))
 
-        l_null = likelihood_restricted(lambda_null, tau_null, eigenVals, U, Y, W)
+        l_null = likelihood(lambda_null, tau_null, beta_vec_null, eigenVals, U, Y, W)
 
 
     if verbose > 0:
@@ -168,13 +180,10 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
 
     for g in progress_bar:
         lambda_restricted = calc_lambda_restricted(eigenVals, U, Y, np.c_[W, X[:,g]])
-        beta, se_beta, tau = calc_beta_vg_ve_restricted(eigenVals, U, W, X[:,g], lambda_restricted, Y)
-
-        # Fix these calculations later
-        l_alt = likelihood_restricted(lambda_restricted, tau, eigenVals, U, Y, np.c_[W, X[:,g]])
+        beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted(eigenVals, U, W, X[:,g], lambda_restricted, Y)
 
         F_wald = np.power(beta/se_beta, 2.0)
-        D_lrt = 2 * (np.log10(np.abs(l_alt)) - np.log10(np.abs(l_null)))
+        
 
         # Store values
         results_dict['beta'].append(beta)
@@ -183,6 +192,14 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
         results_dict['lambda'].append(lambda_restricted)
         results_dict['F_wald'].append(F_wald)
         results_dict['p_wald'].append(1-stats.f.cdf(x=F_wald, dfn=1, dfd=n-c-1))
+
+        lambda_alt = calc_lambda(eigenVals, U, Y, np.c_[W, X[:,g]])
+        beta, beta_vec, se_beta, tau = calc_beta_vg_ve(eigenVals, U, W, X[:,g], lambda_alt, Y)
+
+        # Fix these calculations later
+        l_alt = likelihood(lambda_alt, tau, beta_vec, eigenVals, U, Y, np.c_[W, X[:,g]])
+        D_lrt = 2 * (l_alt - l_null)
+
         results_dict['D_lrt'].append(D_lrt)
         results_dict['p_lrt'].append(1-stats.chi2.cdf(x=D_lrt, df=1))
         results_dict['likelihood'].append(l_alt)
@@ -221,7 +238,7 @@ except ImportError:
 
         ytPxy = Y.T @ Px @ Y
 
-        se_beta = np.sqrt(ytPxy/((n - c - 1) * (x.T @ Px @ x)))
+        se_beta = (1/np.sqrt((n - c - 1))) * np.sqrt(ytPxy)/np.sqrt(x.T @ Px @ x)
 
         tau = n/ytPxy
 
@@ -241,7 +258,7 @@ except ImportError:
 
         ytPxy = Y.T @ Px @ Y
 
-        se_beta = np.sqrt(ytPxy/((n - c - 1) * (x.T @ Pc @ x)))
+        se_beta = (1/np.sqrt((n - c - 1))) * np.sqrt(ytPxy)/np.sqrt(x.T @ Pc @ x)
 
         tau = (n-c-1)/ytPxy
 
@@ -290,7 +307,7 @@ except ImportError:
 
         yT_Px_G_Px_y = (yT_Px_y - yT_Px_Px_y)/lam
 
-        result = result - n * (yT_Px_G_Px_G_Px_y @ yT_Px_y - yT_Px_G_Px_y @ yT_Px_G_Px_y) / (yT_Px_y * yT_Px_y)
+        result = result - 0.5 * n * (2 * yT_Px_G_Px_G_Px_y * yT_Px_y - yT_Px_G_Px_y * yT_Px_G_Px_y) / (yT_Px_y * yT_Px_y)
 
         return float(result)
 
@@ -326,7 +343,7 @@ except ImportError:
 
         result = 0.5*(n - c + np.trace(Px @ Px) - 2*np.trace(Px))/(lam*lam)
 
-        result = result - (n - c) * (yT_Px_G_Px_G_Px_y @ yT_Px_y - yT_Px_G_Px_y @ yT_Px_G_Px_y) / (yT_Px_y * yT_Px_y)
+        result = result - 0.5 * (n - c) * (2 * yT_Px_G_Px_G_Px_y @ yT_Px_y - yT_Px_G_Px_y @ yT_Px_G_Px_y) / (yT_Px_y * yT_Px_y)
 
         return float(result)
 
