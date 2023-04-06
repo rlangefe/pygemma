@@ -198,42 +198,42 @@ for dataset in dataset_list:
         plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_wald_manhatten.png"))
         plt.clf()
 
-        pvals = np.sort(data_results['p_lrt'])
+        # pvals = np.sort(data_results['p_lrt'])
 
-        plt.scatter(y=-np.log10(pvals+1e-20), x=-np.log10(theoretical))
-        plt.axline((0,0), slope=1, color='red')
-        plt.xlabel(r'Theoretical: $-\log_{10}(p)$')
-        plt.ylabel(r'Observed: $-\log_{10}(p)$')
-        plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_lrt_qq.png"))
-        plt.clf()
+        # plt.scatter(y=-np.log10(pvals+1e-20), x=-np.log10(theoretical))
+        # plt.axline((0,0), slope=1, color='red')
+        # plt.xlabel(r'Theoretical: $-\log_{10}(p)$')
+        # plt.ylabel(r'Observed: $-\log_{10}(p)$')
+        # plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_lrt_qq.png"))
+        # plt.clf()
 
-        # Manhatten plot adapted from https://stackoverflow.com/a/66062857
-        results_df = pd.DataFrame(
-            {
-            'pos'  : snps['POS'].values[sample],
-            'pval' : -np.log10(data_results['p_lrt']+1e-20),
-            'chr' : snps['CHR'].values[sample]
-            }
-        )
+        # # Manhatten plot adapted from https://stackoverflow.com/a/66062857
+        # results_df = pd.DataFrame(
+        #     {
+        #     'pos'  : snps['POS'].values[sample],
+        #     'pval' : -np.log10(data_results['p_lrt']+1e-20),
+        #     'chr' : snps['CHR'].values[sample]
+        #     }
+        # )
 
-        results_df = results_df.sort_values(['chr', 'pos'])
-        results_df.reset_index(inplace=True, drop=True)
-        results_df['i'] = results_df.index
+        # results_df = results_df.sort_values(['chr', 'pos'])
+        # results_df.reset_index(inplace=True, drop=True)
+        # results_df['i'] = results_df.index
 
-        alpha = -np.log10(0.05/len(pvals))
-        sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'])
-        plt.axline((0,alpha), slope=0, color='red')
-        chrom_df=results_df.groupby('chr')['i'].median()
-        plt.xlabel('chr') 
-        plt.xticks(chrom_df,chrom_df.index)
-        plt.ylabel(r'$-\log_{10}(p)$')
-        plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_lrt_manhatten.png"))
-        plt.clf()
+        # alpha = -np.log10(0.05/len(pvals))
+        # sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'])
+        # plt.axline((0,alpha), slope=0, color='red')
+        # chrom_df=results_df.groupby('chr')['i'].median()
+        # plt.xlabel('chr') 
+        # plt.xticks(chrom_df,chrom_df.index)
+        # plt.ylabel(r'$-\log_{10}(p)$')
+        # plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_lrt_manhatten.png"))
+        # plt.clf()
 
-        plt.scatter(y=-np.log10(data_results['p_wald']+1e-20), x=-np.log10(data_results['p_lrt']+1e-20))
-        plt.axline((0,0), slope=1, color='red')
-        plt.xlabel(r'LRT: $-\log_{10}(p)$')
-        plt.ylabel(r'Wald: $-\log_{10}(p)$')
-        plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_wald_lrt.png"))
-        plt.clf()
+        # plt.scatter(y=-np.log10(data_results['p_wald']+1e-20), x=-np.log10(data_results['p_lrt']+1e-20))
+        # plt.axline((0,0), slope=1, color='red')
+        # plt.xlabel(r'LRT: $-\log_{10}(p)$')
+        # plt.ylabel(r'Wald: $-\log_{10}(p)$')
+        # plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_wald_lrt.png"))
+        # plt.clf()
         

@@ -7,13 +7,18 @@
 #SBATCH --mem=30GB
 #SBATCH --output=logs/pygemma-%j-%a.o
 #SBATCH --error=logs/pygemma-%j-%a.e
-#SBATCH --array=1-400%10
+#SBATCH --array=1-400%20
 
 # Set config variables
 TOPDIR="/net/mulan/home/rlangefe/gemma_work/pygemma/experiments/1000G"
 GENODIR="/net/fantasia/home/borang/Robert/Gene_Expression"
 OUTPUTDIR="/net/mulan/home/rlangefe/gemma_work/1000G_Output"
 PYGEMMADIR="/net/mulan/home/rlangefe/gemma_work/pygemma"
+PCFILE="/net/fantasia/home/borang/Robert/Genotype/chr_all_pc.eigenvec"
+RELATEDNESSMATRIX="/net/fantasia/home/borang/Robert/Genotype/output/chr_all.sXX.txt"
+PYGEMMAFIXPHENO="${PYGEMMADIR}/experiments/1000G/fix_pheno.py"
+PLOTGEMMA="${PYGEMMADIR}/experiments/1000G/plot_gemma.py"
+NPCS=5
 
 # cd to top dir
 cd "${TOPDIR}"
@@ -50,10 +55,48 @@ do
     python "${PYGEMMA_RUNSNP}" \
             -s "${GENODIR}/${GENOFILE}" \
             -p "${GENODIR}/${GENOFILE%_Geno.txt}_Gene.txt" \
-            -k /net/fantasia/home/borang/Robert/Genotype/output/chr_all.sXX.txt \
-            -pcs 5 \
-            --pcfile=/net/fantasia/home/borang/Robert/Genotype/chr_all_pc.eigenvec \
+            -k "${RELATEDNESSMATRIX}" \
+            -pcs ${NPCS} \
+            --pcfile=${PCFILE} \
             -o "${OUTPUT}"
+
+    # Make Gemma run directory
+    mkdir -p "${OUTPUT}/gemma_run"
+    cd "${OUTPUT}/gemma_run"
+
+    python "${PYGEMMADIR}/experiments/1000G/fix_pcs.py" \
+                -i "${PCFILE}" \
+                -pcs ${NPCS} \
+                -o "${OUTPUT}/gemma_run/pcs.txt"
+
+    # Transpose genotypes
+    python "${PYGEMMADIR}/experiments/1000G/transpose.py" \
+            -i "${GENODIR}/${GENOFILE}" \
+            -o "${OUTPUT}/gemma_run/geno.tsv"
+
+    python "${PYGEMMAFIXPHENO}" \
+                -i "${GENODIR}/${GENOFILE%_Geno.txt}_Gene.txt" \
+                -o "${OUTPUT}/gemma_run/pheno.tsv"
+
+    /net/fantasia/home/jiaqiang/shiquan_backup/Poisson_Mixed_Model/experiments/methods/LMM/gemma \
+        -gene "${OUTPUT}/gemma_run/geno.tsv" \
+        -p "${OUTPUT}/gemma_run/pheno.tsv" \
+        -c "${OUTPUT}/gemma_run/pcs.txt" \
+        -n 1 \
+        -k "${RELATEDNESSMATRIX}" \
+        -lmm
+
+    mv "${OUTPUT}/gemma_run/output/result.assoc.txt" "${OUTPUT}/gemma_results.tsv"
+
+    python ${PLOTGEMMA} \
+        -i "${OUTPUT}/gemma_results.tsv" \
+        -o "${OUTPUT}"
+
+    cd $OUTPUT
+
+    # Cleanup
+    rm -rf "${OUTPUT}/gemma_run"
+
 done
 
 rm "${OUTPUTDIR}/geno_files_${SLURM_ARRAY_TASK_ID}.txt"

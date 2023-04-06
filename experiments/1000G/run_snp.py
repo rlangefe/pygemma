@@ -82,7 +82,7 @@ if __name__ == '__main__':
     print('Launching pyGEMMA...')
     data_results = lmm.pygemma(Y, X, W, K, snps=snps, verbose=1)
 
-    data_results.to_csv(os.path.join(args.output, 'gemma_results.csv'), index=False)
+    data_results.to_csv(os.path.join(args.output, 'pygemma_results.csv'), index=False)
 
     theoretical = np.linspace(1/len(data_results),1.0,len(data_results))
     pvals = np.sort(data_results['p_wald'])

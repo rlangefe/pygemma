@@ -107,8 +107,8 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
                         'se_beta'    : [],
                         'tau'        : [],
                         'lambda'     : [],
-                        'D_lrt'      : [],
-                        'p_lrt'      : [],
+                        #'D_lrt'      : [],
+                        #'p_lrt'      : [],
                         'F_wald'     : [],
                         'p_wald'     : [],
                         'likelihood' : []
@@ -133,21 +133,21 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
             # Calculate under null
             n, c = W.shape
 
-            start = time.time()
-            lambda_null = calc_lambda(eigenVals, U, Y, W)
-            console.log(f"[green]Null lambda computed: {round(lambda_null, 5)} - {round(time.time() - start,3)} s")
+            # start = time.time()
+            # lambda_null = calc_lambda(eigenVals, U, Y, W)
+            # console.log(f"[green]Null lambda computed: {round(lambda_null, 5)} - {round(time.time() - start,3)} s")
 
-            start = time.time()
-            Pc = compute_Pc(eigenVals, U, W, lambda_null)
+            # start = time.time()
+            # Pc = compute_Pc(eigenVals, U, W, lambda_null)
     
-            Wt_Pc = W.T @ Pc
-            beta_vec_null = np.linalg.inv(Wt_Pc @ W) @ (Wt_Pc @ Y)
-            tau_null = float(n / (Y.T @ Pc @ Y))
-            console.log(f"[green]Null tau computed: {round(tau_null, 5)} - {round(time.time() - start,3)} s")
+            # Wt_Pc = W.T @ Pc
+            # beta_vec_null = np.linalg.inv(Wt_Pc @ W) @ (Wt_Pc @ Y)
+            # tau_null = float(n / (Y.T @ Pc @ Y))
+            # console.log(f"[green]Null tau computed: {round(tau_null, 5)} - {round(time.time() - start,3)} s")
 
-            start = time.time()
-            l_null = likelihood(lambda_null, tau_null, beta_vec_null, eigenVals, U, Y, W)
-            console.log(f"[green]Null likelihood computed: {round(l_null, 5)} - {round(time.time() - start,3)} s")
+            # start = time.time()
+            # l_null = likelihood(lambda_null, tau_null, beta_vec_null, eigenVals, U, Y, W)
+            # console.log(f"[green]Null likelihood computed: {round(l_null, 5)} - {round(time.time() - start,3)} s")
     else:
         eigenVals, U = np.linalg.eig(K) # Perform eigendecomposition
         eigenVals = eigenVals.astype(np.float32)
@@ -162,15 +162,15 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
         # Calculate under null
         n, c = W.shape
 
-        lambda_null = calc_lambda(eigenVals, U, Y, W)
+        # lambda_null = calc_lambda(eigenVals, U, Y, W)
 
-        Pc = compute_Pc(eigenVals, U, W, lambda_null)
+        # Pc = compute_Pc(eigenVals, U, W, lambda_null)
     
-        Wt_Pc = W.T @ Pc
-        beta_vec_null = np.linalg.inv(Wt_Pc @ W) @ (Wt_Pc @ Y)
-        tau_null = float(n / (Y.T @ Pc @ Y))
+        # Wt_Pc = W.T @ Pc
+        # beta_vec_null = np.linalg.inv(Wt_Pc @ W) @ (Wt_Pc @ Y)
+        # tau_null = float(n / (Y.T @ Pc @ Y))
 
-        l_null = likelihood(lambda_null, tau_null, beta_vec_null, eigenVals, U, Y, W)
+        # l_null = likelihood(lambda_null, tau_null, beta_vec_null, eigenVals, U, Y, W)
 
 
     if verbose > 0:
@@ -193,15 +193,17 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
         results_dict['F_wald'].append(F_wald)
         results_dict['p_wald'].append(1-stats.f.cdf(x=F_wald, dfn=1, dfd=n-c-1))
 
-        lambda_alt = calc_lambda(eigenVals, U, Y, np.c_[W, X[:,g]])
-        beta, beta_vec, se_beta, tau = calc_beta_vg_ve(eigenVals, U, W, X[:,g], lambda_alt, Y)
+        # lambda_alt = calc_lambda(eigenVals, U, Y, np.c_[W, X[:,g]])
+        # beta, beta_vec, se_beta, tau = calc_beta_vg_ve(eigenVals, U, W, X[:,g], lambda_alt, Y)
 
-        # Fix these calculations later
-        l_alt = likelihood(lambda_alt, tau, beta_vec, eigenVals, U, Y, np.c_[W, X[:,g]])
-        D_lrt = 2 * (l_alt - l_null)
+        # # Fix these calculations later
+        # l_alt = likelihood(lambda_alt, tau, beta_vec, eigenVals, U, Y, np.c_[W, X[:,g]])
+        # D_lrt = 2 * (l_alt - l_null)
 
-        results_dict['D_lrt'].append(D_lrt)
-        results_dict['p_lrt'].append(1-stats.chi2.cdf(x=D_lrt, df=1))
+        # results_dict['D_lrt'].append(D_lrt)
+        # results_dict['p_lrt'].append(1-stats.chi2.cdf(x=D_lrt, df=1))
+
+        l_alt = likelihood_restricted(lambda_restricted, tau, eigenVals, U, Y, np.c_[W, X[:,g]])
         results_dict['likelihood'].append(l_alt)
 
 
