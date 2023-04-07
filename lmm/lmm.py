@@ -111,7 +111,7 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
                         #'p_lrt'      : [],
                         'F_wald'     : [],
                         'p_wald'     : [],
-                        'likelihood' : []
+                        #'likelihood' : []
                     }
     if verbose > 0:
         with console.status(f"[bold green]Running null model...") as status:
@@ -179,11 +179,25 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
         progress_bar = range(X.shape[1])
 
     for g in progress_bar:
-        lambda_restricted = calc_lambda_restricted(eigenVals, U, Y, np.c_[W, X[:,g]])
-        beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted(eigenVals, U, W, X[:,g], lambda_restricted, Y)
+        try:
+            lambda_restricted = calc_lambda_restricted(eigenVals, U, Y, np.c_[W, X[:,g]])
+            beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted(eigenVals, U, W, X[:,g], lambda_restricted, Y)
 
-        F_wald = np.power(beta/se_beta, 2.0)
-        
+            F_wald = np.power(beta/se_beta, 2.0)
+
+            #lambda_alt = calc_lambda(eigenVals, U, Y, np.c_[W, X[:,g]])
+            #beta, beta_vec, se_beta, tau = calc_beta_vg_ve(eigenVals, U, W, X[:,g], lambda_alt, Y)
+
+            # Fix these calculations later
+            #l_alt = likelihood(lambda_alt, tau, beta_vec, eigenVals, U, Y, np.c_[W, X[:,g]])
+            #D_lrt = 2 * (l_alt - l_null)
+        except np.linalg.LinAlgError as e:
+            beta = np.nan
+            se_beta = np.nan
+            tau = np.nan
+            lambda_restricted = np.nan
+            F_wald = np.nan
+            D_lrt = np.nan
 
         # Store values
         results_dict['beta'].append(beta)
@@ -193,18 +207,11 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
         results_dict['F_wald'].append(F_wald)
         results_dict['p_wald'].append(1-stats.f.cdf(x=F_wald, dfn=1, dfd=n-c-1))
 
-        # lambda_alt = calc_lambda(eigenVals, U, Y, np.c_[W, X[:,g]])
-        # beta, beta_vec, se_beta, tau = calc_beta_vg_ve(eigenVals, U, W, X[:,g], lambda_alt, Y)
+        #results_dict['D_lrt'].append(D_lrt)
+        #results_dict['p_lrt'].append(1-stats.chi2.cdf(x=D_lrt, df=1))
 
-        # # Fix these calculations later
-        # l_alt = likelihood(lambda_alt, tau, beta_vec, eigenVals, U, Y, np.c_[W, X[:,g]])
-        # D_lrt = 2 * (l_alt - l_null)
-
-        # results_dict['D_lrt'].append(D_lrt)
-        # results_dict['p_lrt'].append(1-stats.chi2.cdf(x=D_lrt, df=1))
-
-        l_alt = likelihood_restricted(lambda_restricted, tau, eigenVals, U, Y, np.c_[W, X[:,g]])
-        results_dict['likelihood'].append(l_alt)
+        #l_alt = likelihood_restricted(lambda_restricted, tau, eigenVals, U, Y, np.c_[W, X[:,g]])
+        #results_dict['likelihood'].append(l_alt)
 
 
     results_df = pd.DataFrame.from_dict(results_dict)
@@ -222,7 +229,7 @@ except ImportError:
     print("Cython not available, using Python version of pyGEMMA")
 
     def compute_Pc(eigenVals, U, W, lam):
-        H_inv = U.T @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U
+        H_inv = U @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U.T
         W_x = W
 
         return H_inv - H_inv @ W_x @ np.linalg.inv(W_x.T @ H_inv @ W_x) @ W_x.T @ H_inv

@@ -32,7 +32,8 @@ def manhattan_plot(df, output_path):
     results_df['i'] = results_df.index
 
     alpha = -np.log10(0.05/len(results_df))
-    sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'])
+    with sns.color_palette():
+        sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'])
 
     # Annotate snp with small font if results_df['pval'] above alpha
     for i, row in results_df.iterrows():

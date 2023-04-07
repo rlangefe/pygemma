@@ -1,3 +1,4 @@
+# cython: infer_types=True
 import cython
 import numpy as np
 cimport numpy as np
@@ -13,9 +14,11 @@ def compute_Pc(
                 np.float32_t lam
                 ):
     
-    cdef np.ndarray[np.float32_t, ndim=2] H_inv = U.T @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U
+    cdef np.ndarray[np.float32_t, ndim=2] H_inv = U @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U.T
 
-    return H_inv - H_inv @ W @ np.linalg.inv(W.T @ H_inv @ W) @ W.T @ H_inv
+    cdef np.ndarray[np.float32_t, ndim=2] H_inv_W = H_inv @ W
+
+    return H_inv - H_inv_W @ np.linalg.inv(W.T @ H_inv_W) @ H_inv_W.T
 
 ##################
 # Reimplementing #
@@ -30,10 +33,12 @@ cdef compute_Pc_cython(
                 np.float32_t lam
                 ):
     
-    cdef np.ndarray[np.float32_t, ndim=2] H_inv = U.T @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U
+    cdef np.ndarray[np.float32_t, ndim=2] H_inv = U @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U.T
     
     return H_inv - H_inv @ W @ np.linalg.inv(W.T @ H_inv @ W) @ W.T @ H_inv
 
+@cython.boundscheck(False) # turn off bounds-checking for entire function
+@cython.wraparound(False)  # turn off negative index wrapping for entire function
 def calc_beta_vg_ve(np.ndarray[np.float32_t, ndim=1] eigenVals,
                     np.ndarray[np.float32_t, ndim=2] U, 
                     np.ndarray[np.float32_t, ndim=2] W, 
@@ -66,6 +71,8 @@ def calc_beta_vg_ve(np.ndarray[np.float32_t, ndim=1] eigenVals,
 
     return beta, beta_vec, None, tau
 
+@cython.boundscheck(False) # turn off bounds-checking for entire function
+@cython.wraparound(False)  # turn off negative index wrapping for entire function
 def calc_beta_vg_ve_restricted(np.ndarray[np.float32_t, ndim=1] eigenVals,
                     np.ndarray[np.float32_t, ndim=2] U, 
                     np.ndarray[np.float32_t, ndim=2] W, 
@@ -95,6 +102,8 @@ def calc_beta_vg_ve_restricted(np.ndarray[np.float32_t, ndim=1] eigenVals,
 
     return np.float32(beta), beta_vec, np.float32(se_beta), np.float32(tau)
 
+@cython.boundscheck(False) # turn off bounds-checking for entire function
+@cython.wraparound(False)  # turn off negative index wrapping for entire function
 def likelihood_lambda(np.float32_t lam,
                       np.ndarray[np.float32_t, ndim=1] eigenVals, 
                       np.ndarray[np.float32_t, ndim=2] U, 
@@ -112,6 +121,8 @@ def likelihood_lambda(np.float32_t lam,
 
     return np.float32(result)
 
+@cython.boundscheck(False) # turn off bounds-checking for entire function
+@cython.wraparound(False)  # turn off negative index wrapping for entire function
 def likelihood_derivative1_lambda(np.float32_t lam,
                                   np.ndarray[np.float32_t, ndim=1] eigenVals, 
                                   np.ndarray[np.float32_t, ndim=2] U, 
@@ -131,6 +142,8 @@ def likelihood_derivative1_lambda(np.float32_t lam,
 
     return np.float32(result)
 
+@cython.boundscheck(False) # turn off bounds-checking for entire function
+@cython.wraparound(False)  # turn off negative index wrapping for entire function
 def likelihood_derivative2_lambda(np.float32_t lam,
                                   np.ndarray[np.float32_t, ndim=1] eigenVals, 
                                   np.ndarray[np.float32_t, ndim=2] U, 
@@ -154,6 +167,8 @@ def likelihood_derivative2_lambda(np.float32_t lam,
 
     return np.float32(result)
 
+@cython.boundscheck(False) # turn off bounds-checking for entire function
+@cython.wraparound(False)  # turn off negative index wrapping for entire function
 def likelihood_derivative1_restricted_lambda(np.float32_t lam,
                                   np.ndarray[np.float32_t, ndim=1] eigenVals, 
                                   np.ndarray[np.float32_t, ndim=2] U, 
@@ -174,6 +189,8 @@ def likelihood_derivative1_restricted_lambda(np.float32_t lam,
 
     return np.float32(result)
 
+@cython.boundscheck(False) # turn off bounds-checking for entire function
+@cython.wraparound(False)  # turn off negative index wrapping for entire function
 def likelihood_derivative2_restricted_lambda(np.float32_t lam,
                                   np.ndarray[np.float32_t, ndim=1] eigenVals, 
                                   np.ndarray[np.float32_t, ndim=2] U, 
@@ -199,6 +216,8 @@ def likelihood_derivative2_restricted_lambda(np.float32_t lam,
 
     return np.float32(result)
 
+@cython.boundscheck(False) # turn off bounds-checking for entire function
+@cython.wraparound(False)  # turn off negative index wrapping for entire function
 def likelihood(np.float32_t lam, 
                np.float32_t tau, 
                np.ndarray[np.float32_t, ndim=2] beta, 
@@ -222,6 +241,8 @@ def likelihood(np.float32_t lam,
 
     return np.float32(result)
 
+@cython.boundscheck(False) # turn off bounds-checking for entire function
+@cython.wraparound(False)  # turn off negative index wrapping for entire function
 def likelihood_restricted(np.float32_t lam, 
                np.float32_t tau,
                np.ndarray[np.float32_t, ndim=1] eigenVals, 
@@ -249,6 +270,8 @@ def likelihood_restricted(np.float32_t lam,
 
     return np.float32(result)
 
+@cython.boundscheck(False) # turn off bounds-checking for entire function
+@cython.wraparound(False)  # turn off negative index wrapping for entire function
 def likelihood_restricted_lambda(np.float32_t lam, 
                                  np.ndarray[np.float32_t, ndim=1] eigenVals, 
                                  np.ndarray[np.float32_t, ndim=2] U, 
