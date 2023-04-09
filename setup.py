@@ -22,9 +22,12 @@ extensions = [
 
 setup(
     name='pygemma',
-    version='0.1',
+    version='1.0',
     #packages=['pygemma', 'pygemma.lmm', 'pygemma.pygemma_model'], # Rough fix for now. Should use setuptools.find_packages()
     packages=find_packages(),
+    author='Robert C. Langefeld',
+    description='Python/Cython implementation of Genome-Wide Efficient Mixed-Model Analysis (GEMMA)',
+    author_email='rlangefe@umich.edu'
     setup_requires=['Cython', 'numpy'],
     install_requires=requirements,
     ext_modules=cythonize(extensions)

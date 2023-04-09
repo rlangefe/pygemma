@@ -86,12 +86,12 @@ We provide a [test script](`https://github.com/rlangefe/pygemma/blob/main/tests/
    </tr> 
    <tr>
       <td><img src="./graphics/tests/qq2.png" alt="qq2" width = 360px height = 200px></td>
-      <td><img src="./graphics/tests/manhattan2.png" align="right" alt="manhattan2" width = 360px height = 200px>
+      <td><img src="./graphics/tests/manhattan2.png" alt="manhattan2" width = 360px height = 200px>
   </td>
   </tr>
   <tr>
       <td><img src="./graphics/tests/qq3.png" alt="qq3" width = 360px height = 200px></td>
-      <td><img src="./graphics/tests/manhattan3.png" align="right" alt="manhattan3" width = 360px height = 200px>
+      <td><img src="./graphics/tests/manhattan3.png" alt="manhattan3" width = 360px height = 200px>
   </td>
   </tr>
 </table>
