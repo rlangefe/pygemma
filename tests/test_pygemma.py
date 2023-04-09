@@ -189,6 +189,7 @@ for dataset in dataset_list:
         plt.axline((0,0), slope=1, color='red')
         plt.xlabel(r'Theoretical: $-\log_{10}(p)$')
         plt.ylabel(r'Observed: $-\log_{10}(p)$')
+        plt.tight_layout()
         plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_wald_qq.png"))
         plt.clf()
 
@@ -213,6 +214,7 @@ for dataset in dataset_list:
         plt.xlabel('chr') 
         plt.xticks(chrom_df,chrom_df.index)
         plt.ylabel(r'$-\log_{10}(p)$')
+        plt.tight_layout()
         plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_wald_manhatten.png"))
         plt.clf()
 
