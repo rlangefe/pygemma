@@ -33,8 +33,8 @@ if __name__ == '__main__':
     # Read in SNPs
     print('Reading in SNPs...')
     snp_df = pd.read_csv(args.snps)
-    X = snp_df.values[:,:100]
-    snps = snp_df.columns[:100]
+    X = snp_df.values
+    snps = snp_df.columns
     X = (X - X.mean(axis=0)) #/ X.std(axis=0)
     p = X.shape[1]
     del snp_df

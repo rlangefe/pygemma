@@ -7,7 +7,7 @@
 #SBATCH --mem=30GB
 #SBATCH --output=logs/pygemma-%A-%a.o
 #SBATCH --error=logs/pygemma-%A-%a.e
-#SBATCH --array=1-3%3
+#SBATCH --array=1-400%30
 
 # Set config variables
 TOPDIR="/net/mulan/home/rlangefe/gemma_work/pygemma/experiments/1000G"
