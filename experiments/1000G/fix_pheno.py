@@ -18,7 +18,7 @@ if __name__ == '__main__':
 
     # Normalize phenotype
     Y = df['Exp_Value'].values.reshape(-1,1)
-    Y = qnorm.quantile_normalize(Y, axis=1)
+    #Y = qnorm.quantile_normalize(Y, axis=1)
 
     # Write to output file (as tsv)
     pd.DataFrame(Y).to_csv(args.output, 

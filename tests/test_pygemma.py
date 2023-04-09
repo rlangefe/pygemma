@@ -117,7 +117,7 @@ for dataset in dataset_list:
     pheno = pd.read_csv(dataset['pheno'], sep='\t', index_col='IID')
 
     X = snps.values[:,7:].T.astype(np.float32)
-    X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
+    X = (X - np.mean(X, axis=0))#/np.std(X, axis=0)
 
     n,p = X.shape
 
@@ -128,19 +128,20 @@ for dataset in dataset_list:
 
     pcs = pca.fit_transform(X)
 
-    sample = np.random.choice(range(0,X.shape[1]), size=100, replace=False)
+    sample = range(0,X.shape[1]) #np.random.choice(range(0,X.shape[1]), size=100, replace=False)
     X = X[:,sample]
     pheno_name = pheno.columns[0]
     Y = pheno[pheno_name].values.reshape(-1,1).astype(np.float32)
-    Y = qnorm.quantile_normalize(Y, axis=1)
+    #Y = qnorm.quantile_normalize(Y, axis=1)
     #Y = (Y-np.mean(Y))/np.std(Y)
 
     # Likelihood tests
     x = X[:,0].reshape(-1,1)
+    x = (x - np.mean(x))#/np.std(x)
     n = Y.shape[0]
 
     W = np.c_[np.ones(shape=(n, 1)), pcs].astype(np.float32)
-    lam_vals = np.array([np.power(10.0, i) for i in np.arange(-4.0,4.0,1.0)], dtype=np.float32)
+    lam_vals = np.array([np.power(10.0, i) for i in np.arange(-5.0,5.5,0.1)], dtype=np.float32)
     eigenVals, U = np.linalg.eig(K)
     eigenVals = np.maximum(0, eigenVals)
 
@@ -149,21 +150,37 @@ for dataset in dataset_list:
 
     lik = [lmm.likelihood_restricted_lambda(l, eigenVals, U, Y, np.c_[W,x]) for l in lam_vals]
     lik_der1 = [lmm.likelihood_derivative1_restricted_lambda(l, eigenVals, U, Y, np.c_[W,x]) for l in lam_vals]
+    lik_der2 = [lmm.likelihood_derivative2_restricted_lambda(l, eigenVals, U, Y, np.c_[W,x]) for l in lam_vals]
+    lam_temp = lmm.calc_lambda_restricted(eigenVals, U, Y, np.c_[W,x])
+    print('Best Lambda: ', lam_temp)
+    print('Results: ', lmm.calc_beta_vg_ve_restricted(eigenVals, U, W, x.reshape(-1), lam_temp, Y))
+    print('Likelihood Min and Max: ', np.min(lik), np.max(lik))
+    print('Likelihood Derivative 1 Min and Max: ', np.min(lik_der1), np.max(lik_der1))
+    print('Likelihood Derivative 2 Min and Max: ', np.min(lik_der2), np.max(lik_der2))
     plt.scatter(x=lam_vals, y=lik)
+    plt.tight_layout()
     plt.savefig(os.path.join(OUTPUT, "likelihood.png"))
     plt.clf()
     plt.scatter(x=lam_vals, y=lik_der1, c='red')
+    plt.tight_layout()
     plt.savefig(os.path.join(OUTPUT, "likelihood_derivative.png"))
+    plt.clf()
+    plt.scatter(x=lam_vals, y=lik_der2, c='red')
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUTPUT, "likelihood_derivative2.png"))
     plt.clf()
 
     for pheno_name in pheno.columns:
         Y = pheno[pheno_name].values.reshape(-1,1).astype(np.float32)
-        #Y = (Y-np.mean(Y))/np.std(Y)
+        #Y = qnorm.quantile_normalize(Y, axis=1)
+        #(Y-np.mean(Y))/np.std(Y)
+
+        Y = Y - Y.mean()
 
         #with console.status(f"[bold green]Running pyGEMMA Tests - {dataset_name}: {pheno_name}...") as status:
-        warnings.filterwarnings("error")
+        #warnings.filterwarnings("error")
         data_results = lmm.pygemma(Y, X, W, K, snps=snps['SNP'].values[sample], verbose=1)
-        print(data_results.head(10))
+        print(data_results.head(20))
 
         theoretical = np.linspace(1/len(data_results),1.0,len(data_results))
         pvals = np.sort(data_results['p_wald'])

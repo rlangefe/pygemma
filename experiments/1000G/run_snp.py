@@ -33,17 +33,18 @@ if __name__ == '__main__':
     # Read in SNPs
     print('Reading in SNPs...')
     snp_df = pd.read_csv(args.snps)
-    X = snp_df.values
-    snps = snp_df.columns
-    X = (X - X.mean(axis=0)) / X.std(axis=0)
+    X = snp_df.values[:,:100]
+    snps = snp_df.columns[:100]
+    X = (X - X.mean(axis=0)) #/ X.std(axis=0)
     p = X.shape[1]
     del snp_df
 
     # Read phenotypes
     print('Reading in phenotypes...')
     phenotype_df = pd.read_csv(args.phenotype)
-    Y = phenotype_df['Exp_Value'].values.reshape(-1,1)
-    Y = qnorm.quantile_normalize(Y, axis=1)
+    Y = phenotype_df['Exp_Value'].values#.reshape(-1,1)
+    #Y = qnorm.quantile_normalize(Y, axis=1)
+    Y = Y - Y.mean()
     del phenotype_df
 
     W = np.ones(shape=(X.shape[0], 1))
@@ -101,7 +102,7 @@ if __name__ == '__main__':
     snps_values.columns = ['CHR', 'POS', 'REF', 'ALT']
 
 
-    # Manhatten plot adapted from https://stackoverflow.com/a/66062857
+    # Manhattan plot adapted from https://stackoverflow.com/a/66062857
     results_df = pd.DataFrame(
         {
         'pos'  : snps_values['POS'].values,
@@ -128,8 +129,8 @@ if __name__ == '__main__':
     plt.xlabel('chr') 
     plt.xticks(chrom_df,chrom_df.index)
     plt.ylabel(r'$-\log_{10}(p)$')
-    plt.title(f'Manhatten Plot - {os.path.splitext(os.path.basename(args.phenotype))[0][:-5]}')
+    plt.title(f'Manhattan Plot - {os.path.splitext(os.path.basename(args.phenotype))[0][:-5]}')
     plt.tight_layout()
-    plt.savefig(os.path.join(args.output, "wald_manhatten.png"))
+    plt.savefig(os.path.join(args.output, "wald_Manhattan.png"))
     plt.clf()
     

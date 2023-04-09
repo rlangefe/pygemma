@@ -9,3 +9,4 @@ rich
 scikit-learn<1.0
 Cython
 scipy<=1.5
+qnorm

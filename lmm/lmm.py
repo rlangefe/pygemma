@@ -38,8 +38,9 @@ def calc_lambda(eigenVals, U, Y, W):
             
             lambda_min = optimize.newton(func=lambda l: likelihood_derivative1_lambda(l, eigenVals, U, Y, W), 
                                         x0=lambda_min,
+                                        rtol=1e-5,
                                         fprime=lambda l: likelihood_derivative2_lambda(l, eigenVals, U, Y, W),
-                                        maxiter=5000,
+                                        maxiter=10,
                                         disp=False)
             
             roots.append(lambda_min)
@@ -65,6 +66,7 @@ def calc_lambda_restricted(eigenVals, U, Y, W):
         likelihood_lambda0 = likelihood_derivative1_restricted_lambda(lambda0, eigenVals, U, Y, W)
         likelihood_lambda1 = likelihood_derivative1_restricted_lambda(lambda1, eigenVals, U, Y, W)
 
+
         if np.sign(likelihood_lambda0) * np.sign(likelihood_lambda1) < 0:
             lambda_min = optimize.brentq(f=lambda l: likelihood_derivative1_restricted_lambda(l, eigenVals, U, Y, W), 
                                                 a=lambda0,
@@ -73,17 +75,17 @@ def calc_lambda_restricted(eigenVals, U, Y, W):
                                                 maxiter=5000,
                                                 disp=False)
             
-            # TODO: Deal wit lack of convergence
+            
+            # TODO: Deal with lack of convergence
             lambda_min = optimize.newton(func=lambda l: likelihood_derivative1_restricted_lambda(l, eigenVals, U, Y, W), 
                                     x0=lambda_min,
+                                    rtol=1e-5,
                                     fprime=lambda l: likelihood_derivative2_restricted_lambda(l, eigenVals, U, Y, W),
-                                    maxiter=5000,
+                                    maxiter=10,
                                     disp=False)
 
 
             roots.append(lambda_min)
-        
-        
 
     likelihood_list = [likelihood_restricted_lambda(lam, eigenVals, U, Y, W) for lam in roots]
 
@@ -130,6 +132,8 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
             X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
             console.log(f"[green]Genotype matrix centered - {round(time.time() - start,3)} s")
 
+            console.log(f"[green]Running {X.shape[1]} SNPs with {Y.shape[0]} individuals...")
+
             # Calculate under null
             n, c = W.shape
 
@@ -157,7 +161,7 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
 
         assert (eigenVals >= 0).all()
 
-        X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
+        X = (X - np.mean(X, axis=0))#/np.std(X, axis=0)
 
         # Calculate under null
         n, c = W.shape
@@ -188,7 +192,7 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
             #lambda_alt = calc_lambda(eigenVals, U, Y, np.c_[W, X[:,g]])
             #beta, beta_vec, se_beta, tau = calc_beta_vg_ve(eigenVals, U, W, X[:,g], lambda_alt, Y)
 
-            # Fix these calculations later
+            # #Fix these calculations later
             #l_alt = likelihood(lambda_alt, tau, beta_vec, eigenVals, U, Y, np.c_[W, X[:,g]])
             #D_lrt = 2 * (l_alt - l_null)
         except np.linalg.LinAlgError as e:

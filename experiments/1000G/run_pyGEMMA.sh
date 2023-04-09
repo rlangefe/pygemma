@@ -5,9 +5,9 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --tasks-per-node=1
 #SBATCH --mem=30GB
-#SBATCH --output=logs/pygemma-%j-%a.o
-#SBATCH --error=logs/pygemma-%j-%a.e
-#SBATCH --array=1-400%20
+#SBATCH --output=logs/pygemma-%A-%a.o
+#SBATCH --error=logs/pygemma-%A-%a.e
+#SBATCH --array=1-3%3
 
 # Set config variables
 TOPDIR="/net/mulan/home/rlangefe/gemma_work/pygemma/experiments/1000G"

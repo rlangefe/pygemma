@@ -13,6 +13,7 @@ extensions = [
               sources=['pygemma_model/pygemma_model.pyx'],
               include_dirs=[np.get_include(), scipy.get_include()],
               extra_compile_args=["-O3"]),
+
     Extension('pygemma.lmm',
               sources=['lmm/lmm.py'],
               include_dirs=[np.get_include(), scipy.get_include()],
