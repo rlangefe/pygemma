@@ -27,7 +27,7 @@ setup(
     packages=find_packages(),
     author='Robert C. Langefeld',
     description='Python/Cython implementation of Genome-Wide Efficient Mixed-Model Analysis (GEMMA)',
-    author_email='rlangefe@umich.edu'
+    author_email='rlangefe@umich.edu',
     setup_requires=['Cython', 'numpy'],
     install_requires=requirements,
     ext_modules=cythonize(extensions)

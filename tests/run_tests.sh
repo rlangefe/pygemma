@@ -11,3 +11,5 @@
 cd /net/mulan/home/rlangefe/gemma_work/pygemma/tests
 
 python test_pygemma.py
+
+python gen_comparison.py

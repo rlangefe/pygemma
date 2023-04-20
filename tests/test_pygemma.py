@@ -14,16 +14,79 @@ if not os.path.exists(OUTPUT):
     os.makedirs(OUTPUT)
 
 from rich.console import Console
+from rich.progress import track
 
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.decomposition import PCA
+
+from scipy import stats
 
 import warnings
 
 sns.set_theme()
 
 console = Console()
+
+def run_gwas(Y,W,X, snps=None, verbose=0):
+    if verbose > 0:
+        progress = track(range(X.shape[1]), description='Running GWAS...')
+    else:
+        progress = range(X.shape[1])
+
+    results_dict = {
+        'SNPs': [],
+        'beta': [],
+        'se_beta': [],
+        'p_wald': [],
+    }
+    
+    Y = Y.reshape(-1,1).astype(np.float64)
+    X = X.astype(np.float64)
+    W = W.astype(np.float64)
+
+    X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
+
+    covar_list = [f'Covar{i}' for i in range(W.shape[1])]
+    
+    n = Y.shape[0]
+    c = W.shape[1]
+
+    H = W @ np.linalg.inv(W.T @ W) @ W.T
+
+    # Regress out W matrix from Y
+    y = Y.reshape(-1,1)
+    Y = Y -  H @ Y
+
+    # Regress out W matrix from each X
+    X = X - H @ X
+
+    for g in progress:
+        if snps is not None:
+            results_dict['SNPs'].append(snps[g])
+        else:
+            results_dict['SNPs'].append(g)
+        
+        design_design_inv = 1/np.sum(np.power(X[:,g],2.0)) #np.linalg.inv(X.T @ X)
+
+        #beta_vec, resid, _, _ = np.linalg.lstsq(design_matrix, Y, rcond=None)
+        beta_vec = design_design_inv * (X[:,g].T @ Y)
+        resid = y - X[:,g].reshape(-1,1) * beta_vec - H @ y
+        
+        sigma_sq = np.sum(np.power(resid,2.0)) / (n-c-1)
+        var_covar = float((1/(X[:,g].T @ X[:,g] - X[:,g].T @ H @ X[:,g])) * (resid.T @ resid) / (n-c-1))
+
+        beta = beta_vec[0]
+        se_beta = np.sqrt(var_covar)
+
+        results_dict['beta'].append(beta)
+        results_dict['se_beta'].append(se_beta)
+
+        F_wald = np.power(beta/se_beta, 2.0)
+
+        results_dict['p_wald'].append(1-stats.f.cdf(x=F_wald, dfn=1, dfd=n-c-1))
+
+    return pd.DataFrame(results_dict)
 
 def run_function_test(function, parameters):
     failed = False
@@ -117,18 +180,22 @@ for dataset in dataset_list:
     pheno = pd.read_csv(dataset['pheno'], sep='\t', index_col='IID')
 
     X = snps.values[:,7:].T.astype(np.float32)
-    X = (X - np.mean(X, axis=0))#/np.std(X, axis=0)
+    X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
+    X = X
 
     n,p = X.shape
 
     if not dataset['kinship']:
         K = X @ X.T / p
+    else:
+        K = pd.read_csv(dataset['kinship'], header=None).values
 
     pca = PCA(n_components=2)
 
     pcs = pca.fit_transform(X)
 
-    sample = range(0,X.shape[1]) #np.random.choice(range(0,X.shape[1]), size=100, replace=False)
+    sample = range(0,X.shape[1]) 
+    #sample = np.random.choice(range(0,X.shape[1]), size=100, replace=False)
     X = X[:,sample]
     pheno_name = pheno.columns[0]
     Y = pheno[pheno_name].values.reshape(-1,1).astype(np.float32)
@@ -136,12 +203,13 @@ for dataset in dataset_list:
     #Y = (Y-np.mean(Y))/np.std(Y)
 
     # Likelihood tests
-    x = X[:,0].reshape(-1,1)
-    x = (x - np.mean(x))#/np.std(x)
+    x = X[:,2].reshape(-1,1)
+    #x = (x - np.mean(x))/np.std(x)
     n = Y.shape[0]
 
     W = np.c_[np.ones(shape=(n, 1)), pcs].astype(np.float32)
-    lam_vals = np.array([np.power(10.0, i) for i in np.arange(-5.0,5.5,0.1)], dtype=np.float32)
+    #W = np.ones(shape=(n, 1)).astype(np.float32)
+    lam_vals = np.array([np.power(10.0, i) for i in np.arange(-5.0,4.0,0.01)], dtype=np.float32)
     eigenVals, U = np.linalg.eig(K)
     eigenVals = np.maximum(0, eigenVals)
 
@@ -172,13 +240,15 @@ for dataset in dataset_list:
 
     for pheno_name in pheno.columns:
         Y = pheno[pheno_name].values.reshape(-1,1).astype(np.float32)
-        #Y = qnorm.quantile_normalize(Y, axis=1)
+        Y = qnorm.quantile_normalize(Y, axis=1)
         #(Y-np.mean(Y))/np.std(Y)
 
-        Y = Y - Y.mean()
-
+        #Y = (Y - Y.mean())/Y.std()
+        Y = Y.reshape(-1,1)
         #with console.status(f"[bold green]Running pyGEMMA Tests - {dataset_name}: {pheno_name}...") as status:
         #warnings.filterwarnings("error")
+        
+        #data_results = lmm.pygemma(Y - H @ Y, X - H @ X, np.ones(shape=(n, 1)), K, snps=snps['SNP'].values[sample], verbose=1)
         data_results = lmm.pygemma(Y, X, W, K, snps=snps['SNP'].values[sample], verbose=1)
         print(data_results.head(20))
 
@@ -216,6 +286,91 @@ for dataset in dataset_list:
         plt.ylabel(r'$-\log_{10}(p)$')
         plt.tight_layout()
         plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_wald_manhatten.png"))
+        plt.clf()
+
+        ##### Fixed Effects only #####
+        data_results = run_gwas(Y, W, X, snps=snps['SNP'].values[sample], verbose=1)
+        median_p = np.median(data_results['p_wald'].values)
+
+        median_chisq = stats.chi2.ppf(1-median_p, 1)
+
+        lambda_gc = median_chisq/stats.chi2.ppf(0.5, 1)
+
+        print(f'Lambda GC: {lambda_gc}')
+        data_results['p_wald_gc'] = 1-stats.chi2.cdf(stats.chi2.ppf(1-data_results['p_wald'] , 1)/lambda_gc, df=1)
+        print(data_results.head(20))
+
+        theoretical = np.linspace(1/len(data_results),1.0,len(data_results))
+        pvals = np.sort(data_results['p_wald'])
+        
+        plt.scatter(y=-np.log10(pvals+1e-20), x=-np.log10(theoretical))
+        plt.axline((0,0), slope=1, color='red')
+        plt.xlabel(r'Theoretical: $-\log_{10}(p)$')
+        plt.ylabel(r'Observed: $-\log_{10}(p)$')
+        plt.tight_layout()
+        plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_wald_qq_fixed.png"))
+        plt.clf()
+
+        # Manhatten plot adapted from https://stackoverflow.com/a/66062857
+        results_df = pd.DataFrame(
+            {
+            'pos'  : snps['POS'].values[sample],
+            'pval' : -np.log10(data_results['p_wald']+1e-20),
+            'chr' : snps['CHR'].values[sample]
+            }
+        )
+
+        results_df = results_df.sort_values(['chr', 'pos'])
+        results_df.reset_index(inplace=True, drop=True)
+        results_df['i'] = results_df.index
+
+        alpha = -np.log10(0.05/len(pvals))
+        with sns.color_palette():
+            sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'])
+        plt.axline((0,alpha), slope=0, color='red')
+        chrom_df=results_df.groupby('chr')['i'].median()
+        plt.xlabel('chr') 
+        plt.xticks(chrom_df,chrom_df.index)
+        plt.ylabel(r'$-\log_{10}(p)$')
+        plt.tight_layout()
+        plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_wald_manhatten_fixed.png"))
+        plt.clf()
+
+        # GC
+        theoretical = np.linspace(1/len(data_results),1.0,len(data_results))
+        pvals = np.sort(data_results['p_wald_gc'])
+        
+        plt.scatter(y=-np.log10(pvals+1e-20), x=-np.log10(theoretical))
+        plt.axline((0,0), slope=1, color='red')
+        plt.xlabel(r'Theoretical: $-\log_{10}(p)$')
+        plt.ylabel(r'Observed: $-\log_{10}(p)$')
+        plt.tight_layout()
+        plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_wald_qq_fixed_gc.png"))
+        plt.clf()
+
+        # Manhatten plot adapted from https://stackoverflow.com/a/66062857
+        results_df = pd.DataFrame(
+            {
+            'pos'  : snps['POS'].values[sample],
+            'pval' : -np.log10(data_results['p_wald_gc']+1e-20),
+            'chr' : snps['CHR'].values[sample]
+            }
+        )
+
+        results_df = results_df.sort_values(['chr', 'pos'])
+        results_df.reset_index(inplace=True, drop=True)
+        results_df['i'] = results_df.index
+
+        alpha = -np.log10(0.05/len(pvals))
+        with sns.color_palette():
+            sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'])
+        plt.axline((0,alpha), slope=0, color='red')
+        chrom_df=results_df.groupby('chr')['i'].median()
+        plt.xlabel('chr') 
+        plt.xticks(chrom_df,chrom_df.index)
+        plt.ylabel(r'$-\log_{10}(p)$')
+        plt.tight_layout()
+        plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_wald_manhatten_fixed_gc.png"))
         plt.clf()
 
         #############

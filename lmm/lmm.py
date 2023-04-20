@@ -51,45 +51,72 @@ def calc_lambda(eigenVals, U, Y, W):
 
     return roots[np.argmax(likelihood_list)]
 
-def calc_lambda_restricted(eigenVals, U, Y, W):
-    # Loop over intervals and find where likelihood changes signs with respect to lambda
-    step = 1.0
+# def calc_lambda_restricted(eigenVals, U, Y, W):
+#     # Loop over intervals and find where likelihood changes signs with respect to lambda
+#     step = 1.0
 
-    lambda_pow_low = -5.0
-    lambda_pow_high = 5.0
+#     lambda_pow_low = -5.0
+#     lambda_pow_high = 5.0
 
-    lambda_possible = [(np.power(10.0, i), np.power(10.0, i+step)) for i in np.arange(lambda_pow_low,lambda_pow_high,step)]
+#     lambda_biggest = np.power(10.0, lambda_pow_high)
+#     lambda_smallest = np.power(10.0, lambda_pow_low)
 
-    roots = [np.power(10.0, lambda_pow_low), np.power(10.0, lambda_pow_high)]
+#     lambda_possible = [(np.power(10.0, i), np.power(10.0, i+step)) for i in np.arange(lambda_pow_low,lambda_pow_high,step)]
+
+#     roots = [np.power(10.0, lambda_pow_low), np.power(10.0, lambda_pow_high)]
     
-    for lambda0, lambda1 in lambda_possible:
-        likelihood_lambda0 = likelihood_derivative1_restricted_lambda(lambda0, eigenVals, U, Y, W)
-        likelihood_lambda1 = likelihood_derivative1_restricted_lambda(lambda1, eigenVals, U, Y, W)
+#     for lambda0, lambda1 in lambda_possible:
+#         likelihood_lambda0 = likelihood_derivative1_restricted_lambda(lambda0, eigenVals, U, Y, W)
+#         likelihood_lambda1 = likelihood_derivative1_restricted_lambda(lambda1, eigenVals, U, Y, W)
 
 
-        if np.sign(likelihood_lambda0) * np.sign(likelihood_lambda1) < 0:
-            lambda_min = optimize.brentq(f=lambda l: likelihood_derivative1_restricted_lambda(l, eigenVals, U, Y, W), 
-                                                a=lambda0,
-                                                b=lambda1,
-                                                rtol=0.1,
-                                                maxiter=5000,
-                                                disp=False)
+#         if np.sign(likelihood_lambda0) * np.sign(likelihood_lambda1) < 0:
+#             lambda_min = optimize.brentq(f=lambda l: likelihood_derivative1_restricted_lambda(l, eigenVals, U, Y, W), 
+#                                                 a=lambda0,
+#                                                 b=lambda1,
+#                                                 rtol=0.1,
+#                                                 maxiter=5000,
+#                                                 disp=False)
             
             
-            # TODO: Deal with lack of convergence
-            lambda_min = optimize.newton(func=lambda l: likelihood_derivative1_restricted_lambda(l, eigenVals, U, Y, W), 
-                                    x0=lambda_min,
-                                    rtol=1e-5,
-                                    fprime=lambda l: likelihood_derivative2_restricted_lambda(l, eigenVals, U, Y, W),
-                                    maxiter=10,
-                                    disp=False)
+#             # TODO: Deal with lack of convergence
+#             # lambda_min = optimize.newton(func=lambda l: likelihood_derivative1_restricted_lambda(l, eigenVals, U, Y, W), 
+#             #                         x0=lambda_min,
+#             #                         rtol=1e-5,
+#             #                         fprime=lambda l: likelihood_derivative2_restricted_lambda(l, eigenVals, U, Y, W),
+#             #                         maxiter=10,
+#             #                         disp=False)
 
+#             # iter = 0
+            
+#             # while True:
+#             #     d1 = likelihood_derivative1_restricted_lambda(lambda_min, eigenVals, U, Y, W)
+#             #     d2 = likelihood_derivative2_restricted_lambda(lambda_min, eigenVals, U, Y, W)
+#             #     ratio = d1/d2
 
-            roots.append(lambda_min)
+#             #     if np.sign(ratio) != np.sign(d1)*np.sign(d2):
+#             #         break
 
-    likelihood_list = [likelihood_restricted_lambda(lam, eigenVals, U, Y, W) for lam in roots]
+#             #     lambda_new = lambda_min - ratio
 
-    return roots[np.argmax(likelihood_list)]
+#             #     r_eps = np.abs(lambda_new-lambda_min)/np.abs(lambda_min)
+
+#             #     if (lambda_new < lambda_smallest) or (lambda_new > lambda_biggest):
+#             #         break
+
+#             #     lambda_min = lambda_new
+
+#             #     if (r_eps < 1e-5) or (iter >= 100):
+#             #         break
+#             #     iter = iter + 1
+
+#             lambda_min = newton(lambda_min, eigenVals, U, Y, W)
+
+#             roots.append(lambda_min)
+
+#     likelihood_list = [likelihood_restricted_lambda(lam, eigenVals, U, Y, W) for lam in roots]
+
+#     return roots[np.argmax(likelihood_list)]
 
 
 
