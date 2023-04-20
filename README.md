@@ -61,9 +61,11 @@ The `pyGEMMA` package is designed to fit the same model as GEMMA. That is, it fi
 $$
 \mathbf{y} = \mathbf{W} \mathbf{\alpha} + \mathbf{x} \mathbf{\beta} + \mathbf{Z} \mathbf{u} + \mathbf{\varepsilon}
 $$
+
 $$
 \mathbf{u} \sim \mathcal{\text{MVN}}_{m}(\mathbf{0}, \lambda \tau^{-1} \mathbf{K})
 $$
+
 $$
 \varepsilon \sim \mathcal{\text{MVN}}_{n}(\mathbf{0}, \tau^{-1} \mathbf{I}_{n})
 $$
