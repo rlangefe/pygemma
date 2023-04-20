@@ -42,9 +42,9 @@ if __name__ == '__main__':
     # Read phenotypes
     print('Reading in phenotypes...')
     phenotype_df = pd.read_csv(args.phenotype)
-    Y = phenotype_df['Exp_Value'].values#.reshape(-1,1)
-    #Y = qnorm.quantile_normalize(Y, axis=1)
-    Y = Y - Y.mean()
+    Y = phenotype_df['Exp_Value'].values.reshape(-1,1)
+    Y = qnorm.quantile_normalize(Y, axis=1)
+    #Y = Y - Y.mean()
     del phenotype_df
 
     W = np.ones(shape=(X.shape[0], 1))
