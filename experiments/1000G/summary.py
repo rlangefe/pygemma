@@ -65,7 +65,7 @@ def create_comparison_plots(directory_path):
     plt.clf()
 
     # Grid of Manhattan plots
-    fig, ax = plt.subplots(1,3, figsize=(10, 10))
+    fig, ax = plt.subplots(1,3, figsize=(10, 5))
     
     for i, model_dict in enumerate([pygemma_files, gemma_files, ols_gc_files]):
             
@@ -83,7 +83,7 @@ def create_comparison_plots(directory_path):
     plt.clf()
 
     # Grid of QQ plots
-    fig, ax = plt.subplots(1,3, figsize=(10, 10))
+    fig, ax = plt.subplots(1,3, figsize=(10, 5))
     
     for i, model_dict in enumerate([pygemma_files, gemma_files, ols_gc_files]):
             

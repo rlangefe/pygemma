@@ -12,8 +12,10 @@
 # Set config variables
 TOPDIR="/net/mulan/home/rlangefe/gemma_work/pygemma/experiments/1000G"
 GENODIR="/net/fantasia/home/borang/Robert/Gene_Expression"
-OUTPUTDIR="/net/mulan/home/rlangefe/gemma_work/1000G_Output"
+#OUTPUTDIR="/net/mulan/home/rlangefe/gemma_work/1000G_Output"
+OUTPUTDIR="/net/mulan/home/rlangefe/gemma_work/1000G_Output_test"
 PYGEMMADIR="/net/mulan/home/rlangefe/gemma_work/pygemma"
+GEMMA="/net/fantasia/home/jiaqiang/shiquan_backup/Poisson_Mixed_Model/experiments/methods/LMM/gemma"
 PCFILE="/net/fantasia/home/borang/Robert/Genotype/chr_all_pc.eigenvec"
 RELATEDNESSMATRIX="/net/fantasia/home/borang/Robert/Genotype/output/chr_all.sXX.txt"
 PYGEMMAFIXPHENO="${PYGEMMADIR}/experiments/1000G/fix_pheno.py"
@@ -28,6 +30,7 @@ mkdir -p "${OUTPUTDIR}"
 
 # Configure SNP-running path
 PYGEMMA_RUNSNP="${PYGEMMADIR}/experiments/1000G/run_snp.py"
+LINREG_RUNSNP="${PYGEMMADIR}/experiments/1000G/run_lin_reg.py"
 
 # Get list of geno files for this job array idx
 ls "${GENODIR}" | grep "Geno" > "${OUTPUTDIR}/geno_files_${SLURM_ARRAY_TASK_ID}.txt"
@@ -52,15 +55,25 @@ do
     # Make output directory for phenotype
     mkdir -p "${OUTPUT}"
 
+    # Run Fixed Effect Linear Regression
+    python "${LINREG_RUNSNP}" \
+            -s "${GENODIR}/${GENOFILE}" \
+            -p "${GENODIR}/${GENOFILE%_Geno.txt}_Gene.txt" \
+            -k "${RELATEDNESSMATRIX}" \
+            -pcs "${NPCS}" \
+            --pcfile=${PCFILE} \
+            -o "${OUTPUT}"
+
+    # Run pyGEMMA
     python "${PYGEMMA_RUNSNP}" \
             -s "${GENODIR}/${GENOFILE}" \
             -p "${GENODIR}/${GENOFILE%_Geno.txt}_Gene.txt" \
             -k "${RELATEDNESSMATRIX}" \
-            -pcs ${NPCS} \
+            -pcs "${NPCS}" \
             --pcfile=${PCFILE} \
             -o "${OUTPUT}"
 
-    # Make Gemma run directory
+    Make Gemma run directory
     mkdir -p "${OUTPUT}/gemma_run"
     cd "${OUTPUT}/gemma_run"
 
@@ -74,11 +87,12 @@ do
             -i "${GENODIR}/${GENOFILE}" \
             -o "${OUTPUT}/gemma_run/geno.tsv"
 
+    # Modify phenotype
     python "${PYGEMMAFIXPHENO}" \
                 -i "${GENODIR}/${GENOFILE%_Geno.txt}_Gene.txt" \
                 -o "${OUTPUT}/gemma_run/pheno.tsv"
 
-    /net/fantasia/home/jiaqiang/shiquan_backup/Poisson_Mixed_Model/experiments/methods/LMM/gemma \
+    ${GEMMA} \
         -gene "${OUTPUT}/gemma_run/geno.tsv" \
         -p "${OUTPUT}/gemma_run/pheno.tsv" \
         -c "${OUTPUT}/gemma_run/pcs.txt" \
