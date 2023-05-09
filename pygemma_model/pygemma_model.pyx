@@ -18,7 +18,7 @@ cpdef calc_lambda_restricted(np.ndarray[np.float32_t, ndim=1] eigenVals,
     cdef np.float32_t step = 1.0
 
     cdef np.float32_t lambda_pow_low = -5.0
-    cdef np.float32_t lambda_pow_high = 3.0
+    cdef np.float32_t lambda_pow_high = 5.0
 
     #np.ndarray[np.float32_t, ndim=1] lambda_possible = [(np.power(10.0, i), np.power(10.0, i+step)) for i in np.arange(lambda_pow_low,lambda_pow_high,step)]
 
@@ -80,7 +80,10 @@ cpdef calc_lambda_restricted(np.ndarray[np.float32_t, ndim=1] eigenVals,
 
             roots.append(lambda_min)
 
-    likelihood_list = [likelihood_restricted_lambda(lam, eigenVals, U, Y, W) for lam in roots]
+    likelihood_list = np.array([likelihood_restricted_lambda(lam, eigenVals, U, Y, W) for lam in roots],dtype=np.float32)
+
+    # Added relative maximum
+    likelihood_list = [0.0] + list((likelihood_list[:likelihood_list.shape[0]-1] - likelihood_list[1:])/np.abs(likelihood_list[1:]))
 
     return roots[np.argmax(likelihood_list)]
 
@@ -406,7 +409,8 @@ cpdef likelihood_restricted(np.float32_t lam,
     #result = result - 0.5*np.linalg.slogdet(W.T @ H_inv @ W)[1]
     result = result - 0.5*np.linalg.slogdet(compute_H_inv(lam, eigenVals, W.T @ U))[1]
 
-    result = result - 0.5*tau*np.log(Y.T @ compute_Pc(eigenVals, U, W, lam) @ Y)
+    #result = result - 0.5*tau*np.log(Y.T @ compute_Pc(eigenVals, U, W, lam) @ Y)
+    result = result - 0.5*tau*(Y.T @ compute_Pc(eigenVals, U, W, lam) @ Y)
 
     return np.float32(result)
 
@@ -424,15 +428,16 @@ cpdef likelihood_restricted_lambda(np.float32_t lam,
 
     cdef np.ndarray[np.float32_t, ndim=2] H_inv = compute_H_inv(lam, eigenVals, U)
 
-    cdef np.float32_t result = 0.5*(n - c)*np.log(0.5*(n - c)/np.pi)
-    result = result - 0.5*(n - c)
-    result = result + 0.5*np.linalg.slogdet(W.T @ W)[1]
+    cdef np.float32_t result = 0.0 #0.5*(n - c)*np.log(0.5*(n - c)/np.pi)
+    #result = result - 0.5*(n - c)
+    #result = result + 0.5*np.linalg.slogdet(W.T @ W)[1]
     
-    result = result - 0.5 * np.sum(np.log(lam*eigenVals + 1.0))
-    
-    result = result - 0.5*np.linalg.slogdet(W.T @ H_inv @ W)[1]
+    ##result = result - 0.5 * np.sum(np.log(lam*eigenVals + 1.0))
+    result = result - 0.5 * np.sum(np.log(eigenVals + 1.0/lam)) - 0.5*n*np.log(lam)
 
     result = result - 0.5*(n - c)*np.log(Y.T @ compute_Pc(eigenVals, U, W, lam) @ Y)
+
+    result = result - 0.5*np.linalg.slogdet(W.T @ H_inv @ W)[1]
 
     return np.float32(result) 
 
