@@ -27,6 +27,7 @@ if __name__ == '__main__':
     parser.add_argument("-pcs", "--pcs", dest="pcs", help="Number of PCs", type=int, default=2)
     parser.add_argument("-pcf", "--pcfile", dest="pcfile", help="File containing PCs", type=str, default=None)
     parser.add_argument('-k', '--kinship', dest='kinship', help='Path to kinship matrix', type=str, default=None)
+    parser.add_argument("-n", '--nproc', dest='nproc', help='Number of processes', type=int, default=1)
     parser.add_argument("-o", "--output", dest="output", help="Path to output file", type=str, default="output_file.csv")
     args = parser.parse_args()
 
@@ -81,7 +82,7 @@ if __name__ == '__main__':
             W = np.c_[W, pcs]
 
     print('Launching pyGEMMA...')
-    data_results = lmm.pygemma(Y, X, W, K, snps=snps, verbose=1)
+    data_results = lmm.pygemma(Y, X, W, K, snps=snps, verbose=1, nproc=args.nproc)
 
     data_results.to_csv(os.path.join(args.output, 'pygemma_results.csv'), index=False)
 

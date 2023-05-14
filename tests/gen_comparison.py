@@ -8,13 +8,13 @@ import os
 
 if __name__ == '__main__':
     PLOTPATH = '/net/mulan/home/rlangefe/gemma_work/pygemma/tests/output'
-    PYGEMMAPLOTPATH = '/net/mulan/home/rlangefe/gemma_work/pygemma/graphics/tests'
+    PYGEMMAPLOTPATH = '/net/mulan/home/rlangefe/gemma_work/pygemma/tests/output'
 
     fig, ax = plt.subplots(3, 2, figsize=(10, 10))
 
     for i, pheno in enumerate(range(1,4)):
         
-        pygemma_plot = plt.imread(os.path.join(PYGEMMAPLOTPATH, f'manhattan{pheno}.png'))
+        pygemma_plot = plt.imread(os.path.join(PYGEMMAPLOTPATH, f'Homework3_Pheno{pheno}_wald_manhatten.png'))
         #pygemma_plot = plt.imread(os.path.join(PLOTPATH, f'Homework3_Pheno{pheno}_wald_manhatten.png'))
         ols_plot = plt.imread(os.path.join(PLOTPATH, f'Homework3_Pheno{pheno}_wald_manhatten_fixed.png'))
 
@@ -37,7 +37,7 @@ if __name__ == '__main__':
 
     for i, pheno in enumerate(range(1,4)):
         
-        pygemma_plot = plt.imread(os.path.join(PYGEMMAPLOTPATH, f'qq{pheno}.png'))
+        pygemma_plot = plt.imread(os.path.join(PYGEMMAPLOTPATH, f'Homework3_Pheno{pheno}_wald_qq.png'))
         #pygemma_plot = plt.imread(os.path.join(PLOTPATH, f'Homework3_Pheno{pheno}_wald_qq.png'))
         ols_plot = plt.imread(os.path.join(PLOTPATH, f'Homework3_Pheno{pheno}_wald_qq_fixed.png'))
 
