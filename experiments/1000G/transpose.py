@@ -17,8 +17,8 @@ if __name__ == '__main__':
     gene_names = list(df.columns)
 
     # Normalize dataframe columns
-    #df = df.apply(lambda x: (x - x.mean()) / x.std(), axis=0)
-    df = df.apply(lambda x: (x - x.mean()), axis=0)
+    df = df.apply(lambda x: (x - x.mean()) / x.std(), axis=0)
+    #df = df.apply(lambda x: (x - x.mean()), axis=0)
 
     # Transpose df
     df = df.transpose().reset_index()

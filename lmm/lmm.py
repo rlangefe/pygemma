@@ -2,17 +2,17 @@ import numpy as np
 import pandas as pd
 
 try:
-    from rich.progress import track
+    from rich.progress import track, Progress
     from rich.console import Console
 except ModuleNotFoundError:
     print('Issues with rich for progress tracking')
     
-
+import multiprocessing
 from scipy import optimize, stats
 
 import time
 
-def calc_lambda(eigenVals, U, Y, W):
+def calc_lambda(eigenVals, Y, W):
     # Loop over intervals and find where likelihood changes signs with respect to lambda
     step = 1.0
 
@@ -25,21 +25,21 @@ def calc_lambda(eigenVals, U, Y, W):
     
     for lambda0, lambda1 in lambda_possible:
     
-        likelihood_lambda0 = likelihood_derivative1_lambda(lambda0, eigenVals, U, Y, W)
-        likelihood_lambda1 = likelihood_derivative1_lambda(lambda1, eigenVals, U, Y, W)
+        likelihood_lambda0 = likelihood_derivative1_lambda(lambda0, eigenVals, Y, W)
+        likelihood_lambda1 = likelihood_derivative1_lambda(lambda1, eigenVals, Y, W)
 
         if np.sign(likelihood_lambda0) * np.sign(likelihood_lambda1) < 0:
-            lambda_min = optimize.brentq(f=lambda l: likelihood_derivative1_lambda(l, eigenVals, U, Y, W), 
+            lambda_min = optimize.brentq(f=lambda l: likelihood_derivative1_lambda(l, eigenVals, Y, W), 
                                                 a=lambda0, 
                                                 b=lambda1,
                                                 rtol=0.1,
                                                 maxiter=5000,
                                                 disp=False)
             
-            lambda_min = optimize.newton(func=lambda l: likelihood_derivative1_lambda(l, eigenVals, U, Y, W), 
+            lambda_min = optimize.newton(func=lambda l: likelihood_derivative1_lambda(l, eigenVals, Y, W), 
                                         x0=lambda_min,
                                         rtol=1e-5,
-                                        fprime=lambda l: likelihood_derivative2_lambda(l, eigenVals, U, Y, W),
+                                        fprime=lambda l: likelihood_derivative2_lambda(l, eigenVals, Y, W),
                                         maxiter=10,
                                         disp=False)
             
@@ -47,81 +47,12 @@ def calc_lambda(eigenVals, U, Y, W):
             
 
 
-    likelihood_list = [likelihood_lambda(lam, eigenVals, U, Y, W) for lam in roots]
+    likelihood_list = [likelihood_lambda(lam, eigenVals, Y, W) for lam in roots]
 
     return roots[np.argmax(likelihood_list)]
 
-# def calc_lambda_restricted(eigenVals, U, Y, W):
-#     # Loop over intervals and find where likelihood changes signs with respect to lambda
-#     step = 1.0
 
-#     lambda_pow_low = -5.0
-#     lambda_pow_high = 5.0
-
-#     lambda_biggest = np.power(10.0, lambda_pow_high)
-#     lambda_smallest = np.power(10.0, lambda_pow_low)
-
-#     lambda_possible = [(np.power(10.0, i), np.power(10.0, i+step)) for i in np.arange(lambda_pow_low,lambda_pow_high,step)]
-
-#     roots = [np.power(10.0, lambda_pow_low), np.power(10.0, lambda_pow_high)]
-    
-#     for lambda0, lambda1 in lambda_possible:
-#         likelihood_lambda0 = likelihood_derivative1_restricted_lambda(lambda0, eigenVals, U, Y, W)
-#         likelihood_lambda1 = likelihood_derivative1_restricted_lambda(lambda1, eigenVals, U, Y, W)
-
-
-#         if np.sign(likelihood_lambda0) * np.sign(likelihood_lambda1) < 0:
-#             lambda_min = optimize.brentq(f=lambda l: likelihood_derivative1_restricted_lambda(l, eigenVals, U, Y, W), 
-#                                                 a=lambda0,
-#                                                 b=lambda1,
-#                                                 rtol=0.1,
-#                                                 maxiter=5000,
-#                                                 disp=False)
-            
-            
-#             # TODO: Deal with lack of convergence
-#             # lambda_min = optimize.newton(func=lambda l: likelihood_derivative1_restricted_lambda(l, eigenVals, U, Y, W), 
-#             #                         x0=lambda_min,
-#             #                         rtol=1e-5,
-#             #                         fprime=lambda l: likelihood_derivative2_restricted_lambda(l, eigenVals, U, Y, W),
-#             #                         maxiter=10,
-#             #                         disp=False)
-
-#             # iter = 0
-            
-#             # while True:
-#             #     d1 = likelihood_derivative1_restricted_lambda(lambda_min, eigenVals, U, Y, W)
-#             #     d2 = likelihood_derivative2_restricted_lambda(lambda_min, eigenVals, U, Y, W)
-#             #     ratio = d1/d2
-
-#             #     if np.sign(ratio) != np.sign(d1)*np.sign(d2):
-#             #         break
-
-#             #     lambda_new = lambda_min - ratio
-
-#             #     r_eps = np.abs(lambda_new-lambda_min)/np.abs(lambda_min)
-
-#             #     if (lambda_new < lambda_smallest) or (lambda_new > lambda_biggest):
-#             #         break
-
-#             #     lambda_min = lambda_new
-
-#             #     if (r_eps < 1e-5) or (iter >= 100):
-#             #         break
-#             #     iter = iter + 1
-
-#             lambda_min = newton(lambda_min, eigenVals, U, Y, W)
-
-#             roots.append(lambda_min)
-
-#     likelihood_list = [likelihood_restricted_lambda(lam, eigenVals, U, Y, W) for lam in roots]
-
-#     return roots[np.argmax(likelihood_list)]
-
-
-
-
-def pygemma(Y, X, W, K, snps=None, verbose=0):
+def pygemma(Y, X, W, K, snps=None, verbose=0, nproc=1):
     if True: # Fix compatability issues with Python<=3.6.9 later (issue with rich package)
         console = Console()
     else:
@@ -130,6 +61,10 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
     Y = Y.astype(np.float32).reshape(-1,1)
     W = W.astype(np.float32)
     X = X.astype(np.float32)
+
+    Y = (Y - np.mean(Y, axis=0)) / np.std(Y, axis=0)
+    #K = ((K - np.mean(K, axis=0)) / np.std(K, axis=0)).astype(np.float32)
+    #K = (K - K.mean(axis=1)[:, None]) / K.std(axis=1)[:, None]
 
     results_dict = {
                         'beta'       : [],
@@ -159,13 +94,19 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
             X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
             console.log(f"[green]Genotype matrix centered - {round(time.time() - start,3)} s")
 
+            start = time.time()
+            for col in range(W.shape[1]):
+                if W[:,col].std() > 0:
+                    W[:,col] = (W[:,col] - W[:,col].mean()) / W[:,col].std()
+            console.log(f"[green]Covariate matrix centered - {round(time.time() - start,3)} s")
+
             console.log(f"[green]Running {X.shape[1]} SNPs with {Y.shape[0]} individuals...")
 
             # Calculate under null
             n, c = W.shape
 
             # start = time.time()
-            # lambda_null = calc_lambda(eigenVals, U, Y, W)
+            # lambda_null = calc_lambda(eigenVals, U @ Y, U @ W)
             # console.log(f"[green]Null lambda computed: {round(lambda_null, 5)} - {round(time.time() - start,3)} s")
 
             # start = time.time()
@@ -177,7 +118,7 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
             # console.log(f"[green]Null tau computed: {round(tau_null, 5)} - {round(time.time() - start,3)} s")
 
             # start = time.time()
-            # l_null = likelihood(lambda_null, tau_null, beta_vec_null, eigenVals, U, Y, W)
+            # l_null = likelihood(lambda_null, tau_null, beta_vec_null, eigenVals, U @ Y, U @ W)
             # console.log(f"[green]Null likelihood computed: {round(l_null, 5)} - {round(time.time() - start,3)} s")
     else:
         eigenVals, U = np.linalg.eig(K) # Perform eigendecomposition
@@ -188,69 +129,184 @@ def pygemma(Y, X, W, K, snps=None, verbose=0):
 
         assert (eigenVals >= 0).all()
 
-        X = (X - np.mean(X, axis=0))#/np.std(X, axis=0)
+        X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
+
+        for col in range(W.shape[1]):
+            if W[:,col].std() > 0:
+                W[:,col] = (W[:,col] - W[:,col].mean()) / W[:,col].std()
 
         # Calculate under null
         n, c = W.shape
 
-        # lambda_null = calc_lambda(eigenVals, U, Y, W)
+        #lambda_null = calc_lambda(eigenVals, Y, W)
 
         # Pc = compute_Pc(eigenVals, U, W, lambda_null)
     
         # Wt_Pc = W.T @ Pc
-        # beta_vec_null = np.linalg.inv(Wt_Pc @ W) @ (Wt_Pc @ Y)
-        # tau_null = float(n / (Y.T @ Pc @ Y))
+        # beta_vec_null = np.linalg.inv(compute_at_Pi_b(lam, W.shape[1],
+        #                                                 lam*eigenVals + 1.0,
+        #                                                 U @ W,
+        #                                                 U @ W,
+        #                                                 U @ W)) @ (compute_at_Pi_b(lam, W.shape[1],
+        #                                                                             lam*eigenVals + 1.0,
+        #                                                                             U @ W,
+        #                                                                             U @ W,
+        #                                                                             U @ Y))
+        # tau_null = float(n / compute_at_Pi_b(lam, W.shape[1],
+        #               lam*eigenVals + 1.0,
+        #               U @ W,
+        #               U @ Y,
+        #               U @ Y))
 
-        # l_null = likelihood(lambda_null, tau_null, beta_vec_null, eigenVals, U, Y, W)
+        # l_null = likelihood(lambda_null, tau_null, beta_vec_null, eigenVals, Y, W)
 
+    X = U @ X
+    Y = U @ Y
+    W = U @ W
 
     if verbose > 0:
-        progress_bar = track(range(X.shape[1]), description='Testing SNPs...')
+        #progress_bar = track(range(X.shape[1]), description='Testing SNPs...') #Uncomment later for good visualization and timing
+        progress_bar = range(X.shape[1])
     else:
         progress_bar = range(X.shape[1])
 
-    for g in progress_bar:
-        try:
-            lambda_restricted = calc_lambda_restricted(eigenVals, U, Y, np.c_[W, X[:,g]])
-            beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted(eigenVals, U, W, X[:,g], lambda_restricted, Y)
+    # for g in progress_bar:
+    #     try:
+    #         lambda_restricted = calc_lambda_restricted(eigenVals, Y, np.c_[W, X[:,g]])
+    #         beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted(eigenVals, W, X[:,g:(g+1)], lambda_restricted, Y)
 
-            F_wald = np.power(beta/se_beta, 2.0)
+    #         F_wald = np.power(beta/se_beta, 2.0)
 
-            #lambda_alt = calc_lambda(eigenVals, U, Y, np.c_[W, X[:,g]])
-            #beta, beta_vec, se_beta, tau = calc_beta_vg_ve(eigenVals, U, W, X[:,g], lambda_alt, Y)
+    #         #lambda_alt = calc_lambda(eigenVals, Y, np.c_[W, X[:,g]])
+    #         #_, beta_vec, _, tau_lrt = calc_beta_vg_ve(eigenVals, W, X[:,g], lambda_alt, Y)
 
-            # #Fix these calculations later
-            #l_alt = likelihood(lambda_alt, tau, beta_vec, eigenVals, U, Y, np.c_[W, X[:,g]])
-            #D_lrt = 2 * (l_alt - l_null)
-        except np.linalg.LinAlgError as e:
-            beta = np.nan
-            se_beta = np.nan
-            tau = np.nan
-            lambda_restricted = np.nan
-            F_wald = np.nan
-            D_lrt = np.nan
+    #         # #Fix these calculations later
+    #         #l_alt = likelihood(lambda_alt, tau_lrt, beta_vec, eigenVals, Y, np.c_[W, X[:,g]])
+    #         #D_lrt = 2 * (l_alt - l_null)
+    #     except np.linalg.LinAlgError as e:
+    #         beta = np.nan
+    #         se_beta = np.nan
+    #         tau = np.nan
+    #         lambda_restricted = np.nan
+    #         F_wald = np.nan
+    #         D_lrt = np.nan
 
-        # Store values
-        results_dict['beta'].append(beta)
-        results_dict['se_beta'].append(se_beta)
-        results_dict['tau'].append(tau)
-        results_dict['lambda'].append(lambda_restricted)
-        results_dict['F_wald'].append(F_wald)
-        results_dict['p_wald'].append(1-stats.f.cdf(x=F_wald, dfn=1, dfd=n-c-1))
+    #     # Store values
+    #     results_dict['beta'].append(beta)
+    #     results_dict['se_beta'].append(se_beta)
+    #     results_dict['tau'].append(tau)
+    #     results_dict['lambda'].append(lambda_restricted)
+    #     results_dict['F_wald'].append(F_wald)
+    #     results_dict['p_wald'].append(1-stats.f.cdf(x=F_wald, dfn=1, dfd=n-c-1))
 
-        #results_dict['D_lrt'].append(D_lrt)
-        #results_dict['p_lrt'].append(1-stats.chi2.cdf(x=D_lrt, df=1))
+    #     #results_dict['D_lrt'].append(D_lrt)
+    #     #results_dict['p_lrt'].append(1-stats.chi2.cdf(x=D_lrt, df=1))
 
-        #l_alt = likelihood_restricted(lambda_restricted, tau, eigenVals, U, Y, np.c_[W, X[:,g]])
-        #results_dict['likelihood'].append(l_alt)
+    #     #l_alt = likelihood_restricted(lambda_restricted, tau, eigenVals, U, Y, np.c_[W, X[:,g]])
+    #     #results_dict['likelihood'].append(l_alt)
 
 
-    results_df = pd.DataFrame.from_dict(results_dict)
+    # results_df = pd.DataFrame.from_dict(results_dict)
+
+    # TODO: Apparently, we can use mpi4py to parallelize this
+    # Let's actually do that at some point
+    '''
+    from mpi4py import MPI
+    from multiprocessing import Pool
+
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+
+    def my_function(x):
+        # some code here
+
+    if __name__ == '__main__':
+        pool = None
+        if rank == 0:
+            pool = Pool(processes=size-1)
+        data = comm.scatter(SampleIter(X, Y, W, eigenVals), root=0)
+        result = my_function(data)
+        results = comm.gather(result, root=0)
+        if rank == 0:
+            results_df = pd.DataFrame.from_dict(results)
+    '''
+    with multiprocessing.Pool(nproc) as pool:
+        total = X.shape[1]
+
+        #progress = Progress()
+        #task = progress.add_task("Testing SNPs...", total=total)
+        #progress.update(task, completed=0)
+
+        #result_iterator = pool.starmap_async(calculate, SampleIter(X, Y, W, eigenVals))
+        
+        results = []
+        #while not result_iterator.ready():
+
+        done = 0
+        for r in track(pool.imap(calculate, SampleIter(X, Y, W, eigenVals)), description='Testing SNPs...', total=total):
+            # update the progress bar
+            done += 1
+            #progress.update(task, completed=done)
+            
+            results.append(r)
+            
+
+        results_df = pd.DataFrame.from_dict(results)
+    
 
     if snps is not None:
         results_df['SNPs'] = snps
 
     return results_df
+
+class SampleIter:
+    def __init__ (self, X, Y, W, eigenVals):
+        self.X = X
+        self.Y = Y
+        self.W = W
+        self.eigenVals = eigenVals
+        self.g = 0
+        self.c = X.shape[1]
+    
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.g < self.c:
+            self.g += 1
+            return (self.eigenVals, self.Y, self.W, self.X[:,self.g-1])
+        else:
+            raise StopIteration
+
+        
+def calculate(t):
+    eigenVals, Y, W, X = t
+    try:
+        lambda_restricted = calc_lambda_restricted(eigenVals, Y, np.c_[W, X])
+        beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted(eigenVals, W, X.reshape(-1,1), lambda_restricted, Y)
+        F_wald = np.power(beta/se_beta, 2.0)
+
+        n = Y.shape[0]
+        c = W.shape[1]
+
+        return {
+            'beta': beta,
+            'se_beta': se_beta,
+            'tau': tau,
+            'lambda': lambda_restricted,
+            'F_wald': F_wald,
+            'p_wald': 1-stats.f.cdf(x=F_wald, dfn=1, dfd=n-c-1),
+        }
+    except np.linalg.LinAlgError as e:
+        return {
+            'beta': np.nan,
+            'se_beta': np.nan,
+            'tau': np.nan,
+            'lambda': np.nan,
+            'F_wald': np.nan,
+            'p_wald': np.nan,
+        }
 
 try:
     from pygemma.pygemma_model import *

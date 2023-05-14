@@ -38,7 +38,13 @@ def run_gwas(Y,W,X, snps=None, verbose=0):
     X = X.astype(np.float64)
     W = W.astype(np.float64)
 
+    Y = (Y - np.mean(Y, axis=0))/np.std(Y, axis=0)
+
     X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
+
+    for col in range(W.shape[1]):
+        if W[:,col].std() > 0:
+            W[:,col] = (W[:,col] - W[:,col].mean()) / W[:,col].std()
 
     covar_list = [f'Covar{i}' for i in range(W.shape[1])]
     
@@ -106,9 +112,9 @@ if __name__ == '__main__':
     # Read phenotypes
     print('Reading in phenotypes...')
     phenotype_df = pd.read_csv(args.phenotype)
-    Y = phenotype_df['Exp_Value'].values#.reshape(-1,1)
-    #Y = qnorm.quantile_normalize(Y, axis=1)
-    Y = Y - Y.mean()
+    Y = phenotype_df['Exp_Value'].values.reshape(-1,1)
+    Y = qnorm.quantile_normalize(Y, axis=1)
+    #Y = Y - Y.mean()
     del phenotype_df
 
     W = np.ones(shape=(X.shape[0], 1))

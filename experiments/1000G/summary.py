@@ -142,7 +142,10 @@ if __name__ == '__main__':
         snp_count = []
             
         for directory in track(os.listdir(args.data_dir), description='Reading data...'):
-            create_comparison_plots(os.path.join(args.data_dir, directory))
+            try:
+                create_comparison_plots(os.path.join(args.data_dir, directory))
+            except:
+                plt.clf()
 
             pygemma_file = os.path.join(args.data_dir, directory, 'pygemma_results.csv')
             gemma_file = os.path.join(args.data_dir, directory, 'gemma_results.tsv')
