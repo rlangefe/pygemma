@@ -148,17 +148,25 @@ with console.status("[bold green]Running pyGEMMA Function Run Tests...") as stat
     # Initializing parameters for tests
     x, Y, W, eigenVals, U, lam, beta, tau = generate_test_matrices(n=n, covars=covars)
     W = np.c_[W,x]
+    print(W.shape)
     Px = pygemma_model.compute_Pc(eigenVals, U, W, lam)
     print(Y.T @ Px @ Y)
     print(lmm.compute_at_Pi_b(lam, W.shape[1],
                       lam*eigenVals + 1.0,
-                      U @ W,
-                      U @ Y,
-                      U @ Y))
+                      U.T @ W,
+                      U.T @ Y,
+                      U.T @ Y))
+    # Uab = lmm.calc_uab(U.T @ W, U.T @ Y, U.T @ x)
+    # print(lmm.precompute_mat(lam, eigenVals, Uab)['Pab'][covars+2, lmm.GetabIndex(covars+3, covars+3, covars+1)])
+    # print(lmm.precompute_mat(lam, eigenVals, Uab)['Pab'].shape)
+    # print(lmm.GetabIndex(covars+3, covars+3, covars+1))
+    # exit(0)
 
-    x = (U @ x).reshape(-1)
-    Y = U @ Y
-    W = U @ W
+    x = (U.T @ x).reshape(-1)
+    Y = U.T @ Y
+    W = U.T @ W
+    
+    
 
     for lam in [1e-3, 5.0, 400, 1e3, 1e5]:
         console.log(f'Test Parameters: n={n}, lam={lam}, tau={tau}')
@@ -166,6 +174,7 @@ with console.status("[bold green]Running pyGEMMA Function Run Tests...") as stat
         functions_and_args = [
                                 # (lmm.compute_Pc, [eigenVals, W, lam]),
                                 # (pygemma_model.compute_Pc, [eigenVals, W, lam]),
+                                (lmm.precompute_mat, [lam, eigenVals, U @ np.c_[W, x], U @ Y]),
                                 (lmm.likelihood_lambda, [lam, eigenVals, Y, W]),
                                 (lmm.likelihood_derivative1_lambda, [lam, eigenVals, Y, W]),
                                 (lmm.likelihood_derivative2_lambda, [lam, eigenVals, Y, W]),
@@ -178,9 +187,13 @@ with console.status("[bold green]Running pyGEMMA Function Run Tests...") as stat
                                 (lmm.likelihood_derivative2_restricted_lambda, [lam, eigenVals, Y, W]),
                                 (lmm.trace_Pi, [lam, W.shape[1], lam*eigenVals+1.0, W]),
                                 (lmm.trace_Pi_Pi, [lam, W.shape[1], lam*eigenVals+1.0, W]),
+                                (lmm.compute_at_Pi_b, [lam, W.shape[1], lam*eigenVals+1.0, W, Y, Y]),
+                                (lmm.compute_at_Pi_Pi_b, [lam, W.shape[1], lam*eigenVals+1.0, W, Y, Y]),
+                                (lmm.compute_at_Pi_Pi_Pi_b, [lam, W.shape[1], lam*eigenVals+1.0, W, Y, Y]),
                             ]
         
         run_test_list(functions_and_args)
+    
 
 DATADIR = os.path.join("..","data")
 dataset_list = [
@@ -228,12 +241,13 @@ for dataset in dataset_list:
     x = X[:,2].reshape(-1,1)
     #x = (x - np.mean(x))/np.std(x)
     n = Y.shape[0]
-    print(pcs.mean(axis=0), pcs.std(axis=0))
+    #print(pcs.mean(axis=0), pcs.std(axis=0))
 
     W = np.c_[np.ones(shape=(n, 1)), pcs].astype(np.float32)
+    #W = np.ones(shape=(n, 1)).astype(np.float32)
     
     #W = np.ones(shape=(n, 1)).astype(np.float32)
-    lam_vals = np.array([np.power(10.0, i) for i in np.arange(-5.0,5.5,0.01)], dtype=np.float32)
+    lam_vals = np.array([np.power(10.0, i) for i in np.arange(-5.0,5.5,0.005)], dtype=np.float32)
     eigenVals, U = np.linalg.eig(K)
     eigenVals = np.maximum(0, eigenVals)
 
@@ -251,11 +265,22 @@ for dataset in dataset_list:
     #                   U @ Y,
     #                   U @ Y))
 
-    Y_star = U @ Y
-    W_star = U @ W
-    x_star = U @ x
+    yt_Px_y = [float(np.trace(pygemma_model.compute_Pc(eigenVals, U, np.c_[W,x.reshape(-1,1)], l) @ pygemma_model.compute_Pc(eigenVals, U, np.c_[W,x.reshape(-1,1)], l))) for l in lam_vals]
+    Y_star = U.T @ Y
+    W_star = U.T @ W
+    x_star = U.T @ x
     W_x_star = np.c_[W_star, x_star]
     x_star = x_star.reshape(-1,1)
+
+    yt_Px_y_test = [float(lmm.trace_Pi_Pi(l, W_x_star.shape[1], l*eigenVals + 1.0, W_x_star)) for l in lam_vals]
+
+    print(pd.DataFrame({'lam': lam_vals, 'yt_Px_y': yt_Px_y, 'yt_Px_y_test': yt_Px_y_test}))
+
+    sns.scatterplot(x=lam_vals, 
+                    y=np.array(yt_Px_y_test) - np.array(yt_Px_y))
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUTPUT, "yt_Px_y.png"))
+    plt.clf()
 
     lik = [lmm.likelihood_restricted_lambda(l, eigenVals, Y_star, W_x_star) for l in lam_vals]
     # warnings.filterwarnings('error')
@@ -282,6 +307,7 @@ for dataset in dataset_list:
     print('Results: ', lmm.calc_beta_vg_ve_restricted(eigenVals, W_star, x_star, lam_temp, Y_star))
     print('Likelihood Min and Max: ', np.min(lik), np.max(lik))
     print('Likelihood Derivative 1 Min and Max: ', np.min(lik_der1), np.max(lik_der1))
+    print('Likelihood Derivative 1 Min and Max above 1e2: ', np.min(np.array(lik_der1)[lam_vals > 1e2]), np.max(np.array(lik_der1)[lam_vals > 1e2]))
     print('Likelihood Derivative 2 Min and Max: ', np.min(lik_der2), np.max(lik_der2))
     plt.scatter(x=lam_vals, y=lik)
     plt.tight_layout()
@@ -309,6 +335,7 @@ for dataset in dataset_list:
         #data_results = lmm.pygemma(Y - H @ Y, X - H @ X, np.ones(shape=(n, 1)), K, snps=snps['SNP'].values[sample], verbose=1)
         nproc = 1 if os.environ.get('SLURM_CPUS_PER_TASK') is None else int(os.environ.get('SLURM_CPUS_PER_TASK'))
         print(f"Using {nproc} processors")
+        #data_results = jax_pygemma.pygemma_jax(Y, X, W, K, snps=snps['SNP'].values[sample], verbose=1, nproc=nproc)
         data_results = lmm.pygemma(Y, X, W, K, snps=snps['SNP'].values[sample], verbose=1, nproc=nproc)
         print(data_results.head(20))
 

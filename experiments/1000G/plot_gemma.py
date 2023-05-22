@@ -130,3 +130,12 @@ if __name__ == '__main__':
         plt.tight_layout()
         plt.savefig(os.path.join(args.output, "pygemma_vs_gemma_beta.png"))
         plt.clf()
+
+        # Scatterplot of lambda values
+        sns.scatterplot(x=-np.log10(df_pygemma['lambda']), y=-np.log10(df['l_remle']))
+        plt.xlabel(r'PyGEMMA: $-\log_{10}(\lambda$)')
+        plt.ylabel(r'GEMMA: $-\log_{10}(\lambda)$')
+        plt.title(f'PyGEMMA vs. GEMMA - {os.path.basename(args.output)}')
+        plt.tight_layout()
+        plt.savefig(os.path.join(args.output, "pygemma_vs_gemma_lambda.png"))
+        plt.clf()

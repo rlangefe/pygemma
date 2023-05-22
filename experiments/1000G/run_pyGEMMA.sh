@@ -1,19 +1,20 @@
 #!/bin/bash
 #SBATCH --job-name="1000G pyGEMMA"
-#SBATCH --partition=mulan
+#SBATCH --partition=main
 #SBATCH --time=24:00:00
 #SBATCH --cpus-per-task=16
 #SBATCH --tasks-per-node=1
 #SBATCH --mem=30GB
 #SBATCH --output=logs/pygemma-%A-%a.o
 #SBATCH --error=logs/pygemma-%A-%a.e
-#SBATCH --array=1-400%30
+#SBATCH --array=1-30%30
 
 # Set config variables
 TOPDIR="/net/mulan/home/rlangefe/gemma_work/pygemma/experiments/1000G"
 GENODIR="/net/fantasia/home/borang/Robert/Gene_Expression"
 #OUTPUTDIR="/net/mulan/home/rlangefe/gemma_work/1000G_Output"
-OUTPUTDIR="/net/mulan/home/rlangefe/gemma_work/1000G_Output_test_parallel"
+#OUTPUTDIR="/net/mulan/home/rlangefe/gemma_work/1000G_Output_test_parallel"
+OUTPUTDIR="/net/mulan/home/rlangefe/gemma_work/1000G_Output_test_no_pcs_new"
 PYGEMMADIR="/net/mulan/home/rlangefe/gemma_work/pygemma"
 GEMMA="/net/fantasia/home/jiaqiang/shiquan_backup/Poisson_Mixed_Model/experiments/methods/LMM/gemma"
 PCFILE="/net/fantasia/home/borang/Robert/Genotype/chr_all_pc.eigenvec"
@@ -99,14 +100,24 @@ do
 
     # Start timer
     STARTTIME=$(date +%s)
-
-    ${GEMMA} \
-        -gene "${OUTPUT}/gemma_run/geno.tsv" \
-        -p "${OUTPUT}/gemma_run/pheno.tsv" \
-        -c "${OUTPUT}/gemma_run/pcs.txt" \
-        -n 1 \
-        -k "${RELATEDNESSMATRIX}" \
-        -lmm 1
+    if [ "$NPCS" -eq 0 ]; then
+        ${GEMMA} \
+            -gene "${OUTPUT}/gemma_run/geno.tsv" \
+            -p "${OUTPUT}/gemma_run/pheno.tsv" \
+            -n 1 \
+            -k "${RELATEDNESSMATRIX}" \
+            -notsnp \
+            -lmm 1
+    else
+        ${GEMMA} \
+            -gene "${OUTPUT}/gemma_run/geno.tsv" \
+            -p "${OUTPUT}/gemma_run/pheno.tsv" \
+            -c "${OUTPUT}/gemma_run/pcs.txt" \
+            -n 1 \
+            -k "${RELATEDNESSMATRIX}" \
+            -notsnp \
+            -lmm 1
+    fi
     
     # End timer
     ENDTIME=$(date +%s)
@@ -146,12 +157,22 @@ do
 
     # Start timer
     STARTTIME=$(date +%s)
-    ${GEMMA} \
-        -gene "${OUTPUT}/gemma_run/geno.tsv" \
-        -p "${OUTPUT}/gemma_run/pheno.tsv" \
-        -c "${OUTPUT}/gemma_run/pcs.txt" \
-        -n 1 \
-        -lm
+    if [ "$NPCS" -eq 0 ]; then
+        ${GEMMA} \
+            -gene "${OUTPUT}/gemma_run/geno.tsv" \
+            -p "${OUTPUT}/gemma_run/pheno.tsv" \
+            -n 1 \
+            -notsnp \
+            -lm
+    else
+        ${GEMMA} \
+            -gene "${OUTPUT}/gemma_run/geno.tsv" \
+            -p "${OUTPUT}/gemma_run/pheno.tsv" \
+            -c "${OUTPUT}/gemma_run/pcs.txt" \
+            -n 1 \
+            -notsnp \
+            -lm
+    fi
 
     # End timer
     ENDTIME=$(date +%s)
@@ -167,6 +188,8 @@ do
 
     # Cleanup
     rm -rf "${OUTPUT}/gemma_run"
+
+    # TODO: Add comparison that uses GEMMA's lambda values to get p and beta
 
 done
 

@@ -36,7 +36,7 @@ if __name__ == '__main__':
     snp_df = pd.read_csv(args.snps)
     X = snp_df.values
     snps = snp_df.columns
-    X = (X - X.mean(axis=0)) #/ X.std(axis=0)
+    X = (X - X.mean(axis=0)) / X.std(axis=0)
     p = X.shape[1]
     del snp_df
 
@@ -45,7 +45,7 @@ if __name__ == '__main__':
     phenotype_df = pd.read_csv(args.phenotype)
     Y = phenotype_df['Exp_Value'].values.reshape(-1,1)
     Y = qnorm.quantile_normalize(Y, axis=1)
-    #Y = Y - Y.mean()
+    Y = (Y - Y.mean(axis=0)) / Y.std(axis=0)
     del phenotype_df
 
     W = np.ones(shape=(X.shape[0], 1))

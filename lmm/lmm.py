@@ -23,9 +23,22 @@ def calc_lambda(eigenVals, Y, W):
 
     roots = [np.power(10.0, lambda_pow_low), np.power(10.0, lambda_pow_high)]
     
-    for lambda0, lambda1 in lambda_possible:
-    
-        likelihood_lambda0 = likelihood_derivative1_lambda(lambda0, eigenVals, Y, W)
+    lambda_possible = np.arange(lambda_pow_low,lambda_pow_high,step, dtype=np.float32)
+
+    for idx in range(lambda_possible.shape[0]):
+        lambda_idx = lambda_possible[idx]
+
+        lambda0 = 10.0 ** (lambda_idx)
+        lambda1 = 10.0 ** (lambda_idx + step)
+
+        # If it's the first iteration
+        if idx == 0:
+            # Compute lower lambda
+            likelihood_lambda0 = likelihood_derivative1_lambda(lambda0, eigenVals, Y, W)
+        else:
+            # Reuse lambda likelihood from previous iteration
+            likelihood_lambda0 = likelihood_lambda1
+
         likelihood_lambda1 = likelihood_derivative1_lambda(lambda1, eigenVals, Y, W)
 
         if np.sign(likelihood_lambda0) * np.sign(likelihood_lambda1) < 0:
@@ -63,8 +76,6 @@ def pygemma(Y, X, W, K, snps=None, verbose=0, nproc=1):
     X = X.astype(np.float32)
 
     Y = (Y - np.mean(Y, axis=0)) / np.std(Y, axis=0)
-    #K = ((K - np.mean(K, axis=0)) / np.std(K, axis=0)).astype(np.float32)
-    #K = (K - K.mean(axis=1)[:, None]) / K.std(axis=1)[:, None]
 
     results_dict = {
                         'beta'       : [],
@@ -93,12 +104,6 @@ def pygemma(Y, X, W, K, snps=None, verbose=0, nproc=1):
             start = time.time()
             X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
             console.log(f"[green]Genotype matrix centered - {round(time.time() - start,3)} s")
-
-            start = time.time()
-            for col in range(W.shape[1]):
-                if W[:,col].std() > 0:
-                    W[:,col] = (W[:,col] - W[:,col].mean()) / W[:,col].std()
-            console.log(f"[green]Covariate matrix centered - {round(time.time() - start,3)} s")
 
             console.log(f"[green]Running {X.shape[1]} SNPs with {Y.shape[0]} individuals...")
 
@@ -131,10 +136,6 @@ def pygemma(Y, X, W, K, snps=None, verbose=0, nproc=1):
 
         X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
 
-        for col in range(W.shape[1]):
-            if W[:,col].std() > 0:
-                W[:,col] = (W[:,col] - W[:,col].mean()) / W[:,col].std()
-
         # Calculate under null
         n, c = W.shape
 
@@ -160,9 +161,9 @@ def pygemma(Y, X, W, K, snps=None, verbose=0, nproc=1):
 
         # l_null = likelihood(lambda_null, tau_null, beta_vec_null, eigenVals, Y, W)
 
-    X = U @ X
-    Y = U @ Y
-    W = U @ W
+    X = U.T @ X
+    Y = U.T @ Y
+    W = U.T @ W
 
     if verbose > 0:
         #progress_bar = track(range(X.shape[1]), description='Testing SNPs...') #Uncomment later for good visualization and timing

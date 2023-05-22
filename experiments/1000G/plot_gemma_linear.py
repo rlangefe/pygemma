@@ -76,7 +76,7 @@ if __name__ == '__main__':
 
     # Read in input file
     df = pd.read_csv(args.input, sep='\t')
-    df_pygemma = pd.read_csv(os.path.join(args.output, 'pygemma_results.csv'))
+    df_pygemma = pd.read_csv(os.path.join(args.output, 'linreg_results.csv'))
 
     if len(df) > 0:
         # Make manhattan plot
