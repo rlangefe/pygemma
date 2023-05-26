@@ -15,12 +15,15 @@ if not os.path.exists(OUTPUT):
 
 from rich.console import Console
 from rich.progress import track
+from rich.traceback import Traceback
 
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.decomposition import PCA
 
 from scipy import stats
+
+import gemma_utils
 
 import warnings
 
@@ -47,9 +50,9 @@ def run_gwas(Y,W,X, snps=None, verbose=0):
 
     X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
 
-    for col in range(W.shape[1]):
-        if W[:,col].std() > 0:
-            W[:,col] = (W[:,col] - W[:,col].mean()) / W[:,col].std()
+    # for col in range(W.shape[1]):
+    #     if W[:,col].std() > 0:
+    #         W[:,col] = (W[:,col] - W[:,col].mean()) / W[:,col].std()
 
     covar_list = [f'Covar{i}' for i in range(W.shape[1])]
     
@@ -99,7 +102,8 @@ def run_function_test(function, parameters):
     try:
         result = function(*parameters)
     except Exception as e:
-        print(e)
+        #print(e)
+        console.print_exception(show_locals=False)
         failed = True
    
     diff = str(round(time.time() - start, 4))
@@ -148,25 +152,28 @@ with console.status("[bold green]Running pyGEMMA Function Run Tests...") as stat
     # Initializing parameters for tests
     x, Y, W, eigenVals, U, lam, beta, tau = generate_test_matrices(n=n, covars=covars)
     W = np.c_[W,x]
+
+    precompute_mat = lmm.precompute_mat(lam, eigenVals, U.T @ W, U.T @ Y)
     print(W.shape)
     Px = pygemma_model.compute_Pc(eigenVals, U, W, lam)
-    print(Y.T @ Px @ Y)
-    print(lmm.compute_at_Pi_b(lam, W.shape[1],
-                      lam*eigenVals + 1.0,
-                      U.T @ W,
-                      U.T @ Y,
-                      U.T @ Y))
-    # Uab = lmm.calc_uab(U.T @ W, U.T @ Y, U.T @ x)
-    # print(lmm.precompute_mat(lam, eigenVals, Uab)['Pab'][covars+2, lmm.GetabIndex(covars+3, covars+3, covars+1)])
-    # print(lmm.precompute_mat(lam, eigenVals, Uab)['Pab'].shape)
-    # print(lmm.GetabIndex(covars+3, covars+3, covars+1))
-    # exit(0)
+    print('Y.T @ Px @ Y: ', float(Y.T @ Px @ Y), precompute_mat['yt_Pi_y'][W.shape[1]])
+    print('Y.T @ Px @ Px @ Y: ', float(Y.T @ Px @ Px @ Y), precompute_mat['yt_Pi_Pi_y'][W.shape[1]])
+    print('Y.T @ Px @ Px @ Px @ Y: ', float(Y.T @ Px @ Px @ Px @ Y), precompute_mat['yt_Pi_Pi_Pi_y'][W.shape[1]])
+    print('Tr(Px): ', np.trace(Px), precompute_mat['tr_Pi'][W.shape[1]])
+    print('Tr(Px @ Px): ', np.trace(Px @ Px), precompute_mat['tr_Pi_Pi'][W.shape[1]])
+
+    exit(0)
+    # print(lmm.compute_at_Pi_Pi_Pi_b(lam, W.shape[1],
+    #                   lam*eigenVals + 1.0,
+    #                   U.T @ W,
+    #                   U.T @ Y,
+    #                   U.T @ Y))
 
     x = (U.T @ x).reshape(-1)
     Y = U.T @ Y
     W = U.T @ W
-    
-    
+
+    #warnings.filterwarnings('error')
 
     for lam in [1e-3, 5.0, 400, 1e3, 1e5]:
         console.log(f'Test Parameters: n={n}, lam={lam}, tau={tau}')
@@ -174,7 +181,7 @@ with console.status("[bold green]Running pyGEMMA Function Run Tests...") as stat
         functions_and_args = [
                                 # (lmm.compute_Pc, [eigenVals, W, lam]),
                                 # (pygemma_model.compute_Pc, [eigenVals, W, lam]),
-                                (lmm.precompute_mat, [lam, eigenVals, U @ np.c_[W, x], U @ Y]),
+                                (lmm.precompute_mat, [lam, eigenVals, np.c_[W, x], Y]),
                                 (lmm.likelihood_lambda, [lam, eigenVals, Y, W]),
                                 (lmm.likelihood_derivative1_lambda, [lam, eigenVals, Y, W]),
                                 (lmm.likelihood_derivative2_lambda, [lam, eigenVals, Y, W]),
@@ -184,6 +191,7 @@ with console.status("[bold green]Running pyGEMMA Function Run Tests...") as stat
                                 (lmm.likelihood_restricted, [lam, tau, eigenVals, Y, W]),
                                 (lmm.likelihood_restricted_lambda, [lam, eigenVals, Y, W]),
                                 (lmm.likelihood_derivative1_restricted_lambda, [lam, eigenVals, Y, W]),
+                                (lmm.wrapper_likelihood_derivative1_restricted_lambda, [lam, eigenVals, Y, W]),
                                 (lmm.likelihood_derivative2_restricted_lambda, [lam, eigenVals, Y, W]),
                                 (lmm.trace_Pi, [lam, W.shape[1], lam*eigenVals+1.0, W]),
                                 (lmm.trace_Pi_Pi, [lam, W.shape[1], lam*eigenVals+1.0, W]),
@@ -247,7 +255,7 @@ for dataset in dataset_list:
     #W = np.ones(shape=(n, 1)).astype(np.float32)
     
     #W = np.ones(shape=(n, 1)).astype(np.float32)
-    lam_vals = np.array([np.power(10.0, i) for i in np.arange(-5.0,5.5,0.005)], dtype=np.float32)
+    lam_vals = np.array([np.power(10.0, i) for i in np.arange(-5.0,5.5,0.1)], dtype=np.float32)
     eigenVals, U = np.linalg.eig(K)
     eigenVals = np.maximum(0, eigenVals)
 
@@ -329,8 +337,51 @@ for dataset in dataset_list:
 
         #Y = (Y - Y.mean())/Y.std()
         Y = Y.reshape(-1,1)
-        #with console.status(f"[bold green]Running pyGEMMA Tests - {dataset_name}: {pheno_name}...") as status:
-        #warnings.filterwarnings("error")
+        
+
+        data_results, total_time = gemma_utils.run_gemma('gemma_run',
+                                                            pd.DataFrame(X, columns=snps['SNP'].values[sample]),
+                                                            Y,
+                                                            W,
+                                                            K)
+        
+        print('GEMMA Run Time: ', total_time)
+        print(data_results.head(10))
+        theoretical = np.linspace(1/len(data_results),1.0,len(data_results))
+        pvals = np.sort(data_results['p_wald'])
+        
+        plt.scatter(y=-np.log10(pvals+1/len(data_results)), x=-np.log10(theoretical))
+        plt.axline((0,0), slope=1, color='red')
+        plt.xlabel(r'Theoretical: $-\log_{10}(p)$')
+        plt.ylabel(r'Observed: $-\log_{10}(p)$')
+        plt.tight_layout()
+        plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_gemma_wald_qq.png"))
+        plt.clf()
+
+        # Manhatten plot adapted from https://stackoverflow.com/a/66062857
+        results_df = pd.DataFrame(
+            {
+            'pos'  : snps['POS'].values[sample],
+            'pval' : -np.log10(data_results['p_wald']+1/len(data_results)),
+            'chr' : snps['CHR'].values[sample]
+            }
+        )
+
+        results_df = results_df.sort_values(['chr', 'pos'])
+        results_df.reset_index(inplace=True, drop=True)
+        results_df['i'] = results_df.index
+
+        alpha = -np.log10(0.05/len(pvals))
+        with sns.color_palette():
+            sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'])
+        plt.axline((0,alpha), slope=0, color='red')
+        chrom_df=results_df.groupby('chr')['i'].median()
+        plt.xlabel('chr') 
+        plt.xticks(chrom_df,chrom_df.index)
+        plt.ylabel(r'$-\log_{10}(p)$')
+        plt.tight_layout()
+        plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_gemma_wald_manhatten.png"))
+        plt.clf()
         
         #data_results = lmm.pygemma(Y - H @ Y, X - H @ X, np.ones(shape=(n, 1)), K, snps=snps['SNP'].values[sample], verbose=1)
         nproc = 1 if os.environ.get('SLURM_CPUS_PER_TASK') is None else int(os.environ.get('SLURM_CPUS_PER_TASK'))
