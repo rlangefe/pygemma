@@ -75,7 +75,7 @@ def pygemma(Y, X, W, K, snps=None, verbose=0, nproc=1):
     W = W.astype(np.float32)
     X = X.astype(np.float32)
 
-    Y = (Y - np.mean(Y, axis=0)) / np.std(Y, axis=0)
+    #Y = (Y - np.mean(Y, axis=0)) / np.std(Y, axis=0)
 
     results_dict = {
                         'beta'       : [],

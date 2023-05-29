@@ -11,11 +11,13 @@ cimport scipy.linalg.cython_blas as blas
 
 from numpy cimport float_t, ndarray
 
+import pandas as pd
+
 #from scipy.optimize.cython_optimize cimport brentq
 
 import time
 
-MIN_VAL=1e-20
+MIN_VAL=1e-35
 
 def run_function_test(function, parameters):
     failed = False
@@ -52,12 +54,12 @@ cpdef calc_lambda_restricted(np.ndarray[np.float32_t, ndim=1] eigenVals,
 
     cdef float lambda0, lambda1, lambda_min, likelihood_lambda0, likelihood_lambda1 = 0.0
 
-    cdef int maxiter = 5000
+    cdef int maxiter = 100
     
     cdef float[:] lambda_possible = np.arange(lambda_pow_low,lambda_pow_high,step, dtype=np.float32)
 
     cdef n = W.shape[0]
-    cdef c = W.shape[1]
+    cdef c = W.shape[1] - 1
 
     if precompute:
         roots = [10.0 ** lambda_pow_low, 10.0 ** lambda_pow_high]
@@ -65,8 +67,8 @@ cpdef calc_lambda_restricted(np.ndarray[np.float32_t, ndim=1] eigenVals,
         precomp_low = precompute_mat(roots[0], eigenVals, W, Y, full=False)
         precomp_high = precompute_mat(roots[1], eigenVals, W, Y, full=False)
 
-        likelihood_list = [likelihood_restricted_lambda_overload(roots[0], n, c, precomp_low['yt_Pi_y'][c], precomp_low['logdet_H_inv'], precomp_low['logdet_Wt_W'], precomp_low['logdet_Wt_H_inv_W']), 
-                           likelihood_restricted_lambda_overload(roots[1], n, c, precomp_high['yt_Pi_y'][c], precomp_high['logdet_H_inv'], precomp_high['logdet_Wt_W'], precomp_high['logdet_Wt_H_inv_W'])]
+        likelihood_list = [likelihood_restricted_lambda_overload(roots[0], n, c, precomp_low['yt_Pi_y'][c], precomp_low['logdet_H'], precomp_low['logdet_Wt_W'], precomp_low['logdet_Wt_H_inv_W']), 
+                           likelihood_restricted_lambda_overload(roots[1], n, c, precomp_high['yt_Pi_y'][c], precomp_high['logdet_H'], precomp_high['logdet_Wt_W'], precomp_high['logdet_Wt_H_inv_W'])]
 
         for idx in range(lambda_possible.shape[0]):
             lambda_idx = lambda_possible[idx]
@@ -87,22 +89,31 @@ cpdef calc_lambda_restricted(np.ndarray[np.float32_t, ndim=1] eigenVals,
             likelihood_lambda1 = wrapper_likelihood_derivative1_restricted_lambda(lambda1, eigenVals, Y, W)
 
             if np.sign(likelihood_lambda0) * np.sign(likelihood_lambda1) < 0:
-                lambda_min = optimize.brentq(f=wrapper_likelihood_derivative1_restricted_lambda, 
+                
+                # lambda_min = optimize.brentq(f=wrapper_likelihood_derivative1_restricted_lambda, 
+                #                             a=lambda0,
+                #                             b=lambda1,
+                #                             rtol=1e-5,#rtol=0.1,
+                #                             maxiter=maxiter,
+                #                             args=(eigenVals, Y, W),
+                #                             disp=False)
+                
+                lambda_min = optimize.brenth(f=wrapper_likelihood_derivative1_restricted_lambda, 
                                             a=lambda0,
                                             b=lambda1,
-                                            rtol=0.1,
+                                            rtol=1e-5,#rtol=0.1,
                                             maxiter=maxiter,
                                             args=(eigenVals, Y, W),
                                             disp=False)
-
-                lambda_min = newton(lambda_min, eigenVals, Y, W, precompute=True)
+                lambda_min = newton(lambda_min, eigenVals, Y, W, precompute=True, lambda_min=lambda0, lambda_max=lambda1)
 
                 roots.append(lambda_min)
 
                 precompute_dict = precompute_mat(lambda_min, eigenVals, W, Y, full=False)
 
-                likelihood_list.append(likelihood_restricted_lambda_overload(lambda_min, n, c, precompute_dict['yt_Pi_y'][c], precompute_dict['logdet_H_inv'], precompute_dict['logdet_Wt_W'], precompute_dict['logdet_Wt_H_inv_W']))
+                likelihood_list.append(likelihood_restricted_lambda_overload(lambda_min, n, c, precompute_dict['yt_Pi_y'][c], precompute_dict['logdet_H'], precompute_dict['logdet_Wt_W'], precompute_dict['logdet_Wt_H_inv_W']))
         
+        print(pd.DataFrame({'lambda': roots, 'likelihood': likelihood_list}))
         return roots[np.argmax(likelihood_list)]
 
     else:
@@ -136,11 +147,12 @@ cpdef calc_lambda_restricted(np.ndarray[np.float32_t, ndim=1] eigenVals,
                                             args=(eigenVals, Y, W),
                                             disp=False)
 
-                lambda_min = newton(lambda_min, eigenVals, Y, W)
+                lambda_min = newton(lambda_min, eigenVals, Y, W, lambda_min=lambda0, lambda_max=lambda1)
 
                 roots.append(lambda_min)
 
                 likelihood_list.append(likelihood_restricted_lambda(lambda_min, eigenVals, Y, W))
+
         
         return roots[np.argmax(likelihood_list)]
 
@@ -175,26 +187,28 @@ cpdef precompute_mat(float lam,
     cdef np.ndarray[np.float32_t, ndim=1] tr_Pi
     cdef np.ndarray[np.float32_t, ndim=1] tr_Pi_Pi
 
+    cdef np.ndarray[np.uint32_t, ndim=1] indices = np.arange(c, dtype=np.uint32)
+
+    cdef float logdet_Wt_H_inv_W #= 0.0 #np.linalg.slogdet(W.T @ (Hi_eval[:,np.newaxis] * W))[1]
+
+    #start = time.time()
+
     # Pi Computations
-    start = time.time()
+    #start = time.time()
     for i in range(c+1): # Loop for Pi
         if i == 0:
-            # for j in range(c+1): # Loop for wj
-            #     #for k in range(c+1): # Loop for wk
-            #     for k in range(j,c+1): # Loop for wk
-            #         wjt_Pi_wk[j,i,k] = W_star[:,j:j+1].T @ (Hi_eval[:,np.newaxis] * W_star[:,k:k+1])
-            #         wjt_Pi_wk[k,i,j] = wjt_Pi_wk[j,i,k]
-            wjt_Pi_wk[:,i,:] = W_star.T @ (Hi_eval[:,np.newaxis] * W_star)
-
+            #wjt_Pi_wk[:,i,:] = W_star.T @ (Hi_eval[:,np.newaxis] * W_star)
+            wjt_Pi_wk[:,:,:] = (W_star.T @ (Hi_eval[:,np.newaxis] * W_star))[:,np.newaxis,:]
         else:
-            # for j in range(c+1): # Loop for wj
-            #     #for k in range(c+1): # Loop for wk
-            #     for k in range(j,c+1): # Loop for wk
-            #         wjt_Pi_wk[j,i,k] = wjt_Pi_wk[j,i-1,k] - wjt_Pi_wk[j,i-1,i-1] * wjt_Pi_wk[k,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1]
-            #         wjt_Pi_wk[k,i,j] = wjt_Pi_wk[j,i,k]
+            #wjt_Pi_wk[:,i,:] = wjt_Pi_wk[:,i-1,:] - np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) / max(wjt_Pi_wk[i-1,i-1,i-1], MIN_VAL)
+            wjt_Pi_wk[:,i:,:] -= (np.outer(wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]))[:,np.newaxis,:]
+        wjt_Pi_wk[i,i,i] = max(wjt_Pi_wk[i,i,i], MIN_VAL)
+   
+    #print(f"Pi: {round(time.time() - start, 4)} s")
 
-            wjt_Pi_wk[:,i,:] = wjt_Pi_wk[:,i-1,:] - np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) / max(wjt_Pi_wk[i-1,i-1,i-1], MIN_VAL)
-    print(f"Pi: {round(time.time() - start, 4)} s")
+    #print(np.min(wjt_Pi_wk[indices,indices,indices]))
+
+    logdet_Wt_H_inv_W = np.sum(np.log(wjt_Pi_wk[indices,indices,indices]))
 
 
     wjt_Pi_Pi_wk = np.zeros((W_star.shape[1], 
@@ -205,51 +219,34 @@ cpdef precompute_mat(float lam,
     tr_Pi = np.zeros((c+1,), dtype=np.float32)
 
     # Pi @ Pi Computations
-    start = time.time()
+    #start = time.time()
     for i in range(c+1): # Loop for Pi
         if i == 0:
-            #for j in range(c+1): # Loop for wj
-                #for k in range(c+1): # Loop for wk
-                # for k in range(j, c+1): # Loop for wk
-                #     wjt_Pi_Pi_wk[j,i,k] = W_star[:,j:j+1].T @ ((Hi_eval ** 2.0)[:,np.newaxis] * W_star[:,k:k+1])
-                #     wjt_Pi_Pi_wk[k,i,j] = wjt_Pi_Pi_wk[j,i,k]
-            
-            wjt_Pi_Pi_wk[:,i,:] = W_star.T @ ((Hi_eval ** 2.0)[:,np.newaxis] * W_star)
+            wjt_Pi_Pi_wk[:,:,:] = (W_star.T @ ((Hi_eval ** 2.0)[:,np.newaxis] * W_star))[:,np.newaxis,:]
         else:
-            # for j in range(c+1): # Loop for wj
-            #     #for k in range(c+1): # Loop for wk
-            #     for k in range(j,c+1): # Loop for wk
-            #         wjt_Pi_Pi_wk[j,i,k] = wjt_Pi_Pi_wk[j,i-1,k] + ((wjt_Pi_wk[j,i-1,i-1] * wjt_Pi_wk[k,i-1,i-1] * wjt_Pi_Pi_wk[i-1,i-1,i-1]) / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)) \
-            #                                 - (wjt_Pi_wk[j,i-1,i-1] * wjt_Pi_Pi_wk[k,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1]) \
-            #                                 - (wjt_Pi_wk[k,i-1,i-1] * wjt_Pi_Pi_wk[j,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1])
-                    
-            #         wjt_Pi_Pi_wk[k,i,j] = wjt_Pi_Pi_wk[j,i,k]
+            # wjt_Pi_Pi_wk[:,i:,:] +=  ((np.outer(wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_wk[:,i-1,i-1])) \
+            #                                 - (transpose_sum(np.outer(wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]))))[:,np.newaxis,:]
+            wjt_Pi_Pi_wk[:,i:,:] +=  ((np.outer(wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_wk[:,i-1,i-1])) \
+                                            - np.outer(wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) \
+                                            - np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1]))[:,np.newaxis,:]
+        wjt_Pi_Pi_wk[i,i,i] = max(wjt_Pi_Pi_wk[i,i,i], MIN_VAL)
 
-            wjt_Pi_Pi_wk[:,i,:] = wjt_Pi_Pi_wk[:,i-1,:] + (np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0))) \
-                                            - (np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) / wjt_Pi_wk[i-1,i-1,i-1]) \
-                                            - (np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) / wjt_Pi_wk[i-1,i-1,i-1]) # Speed this up
-    print(f"Pi @ Pi: {round(time.time() - start, 4)} s")
+    #print(f"Pi @ Pi: {round(time.time() - start, 4)} s")
 
-    # Trace Computations
-    # for i in range(c+1): # Loop for Pi
-    #     if i == 0:
-    #         tr_Pi[i] = np.sum(Hi_eval)
-    #     else:
-    #         tr_Pi[i] = tr_Pi[i-1] - wjt_Pi_Pi_wk[i-1,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1]
-
-    start = time.time()
+    #start = time.time()
     tr_Pi[0] = np.sum(Hi_eval)
 
     # Use np.cumsum to compute trace
     if c > 0:
-        tr_Pi[1:] = - wjt_Pi_Pi_wk[range(c),range(c),range(c)] / wjt_Pi_wk[range(c),range(c),range(c)]
+        tr_Pi[1:] = - wjt_Pi_Pi_wk[indices,indices,indices] / wjt_Pi_wk[indices,indices,indices]
         tr_Pi = np.cumsum(tr_Pi)
-    print(f"Trace Pi: {round(time.time() - start, 4)} s")
+    #print(f"Trace Pi: {round(time.time() - start, 4)} s")
 
 
     # If not performing full computation
     # Skips computations if we only need first derivative (meaning brent)
     if not full:
+        #start = time.time()
         precompute_dict = {
                         'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c],
                         'wjt_Pi_Pi_wk'              : wjt_Pi_Pi_wk[:c, :, :c],
@@ -257,9 +254,10 @@ cpdef precompute_mat(float lam,
                         'yt_Pi_Pi_y'                : wjt_Pi_Pi_wk[c, :, c].reshape(-1),
                         'tr_Pi'                     : tr_Pi,
                         'logdet_Wt_W'               : np.linalg.slogdet(W.T @ W)[1],
-                        'logdet_Wt_H_inv_W'         : np.linalg.slogdet(W.T @ (Hi_eval[:,np.newaxis] * W))[1],
-                        'logdet_H_inv'              : np.sum(np.log(Hi_eval)),
+                        'logdet_Wt_H_inv_W'         : logdet_Wt_H_inv_W,
+                        'logdet_H'              : np.sum(np.log(lam*eigenVals + 1.0)),
                         }
+        #print(f"Precompute: {round(time.time() - start, 4)} s")
 
         return precompute_dict
 
@@ -272,72 +270,70 @@ cpdef precompute_mat(float lam,
         tr_Pi_Pi = np.zeros((c+1,), dtype=np.float32)
         
         # Pi @ Pi @ Pi Computations
-        start = time.time()
+        #start = time.time()
         for i in range(c+1): # Loop for Pi
             if i == 0:
-                #for j in range(c+1): # Loop for wj
-                    #for k in range(c+1): # Loop for wk
-                    # for k in range(j, c+1): # Loop for wk
-                    #     wjt_Pi_Pi_Pi_wk[j,i,k] = W_star[:,j:j+1].T @ ((Hi_eval ** 3.0)[:,np.newaxis] * W_star[:,k:k+1])
-                    #     wjt_Pi_Pi_Pi_wk[k,i,j] = wjt_Pi_Pi_Pi_wk[j,i,k]
-
-
-                wjt_Pi_Pi_Pi_wk[:,i,:] = W_star.T @ ((Hi_eval ** 3.0)[:,np.newaxis] * W_star)
+                #wjt_Pi_Pi_Pi_wk[:,i,:] = W_star.T @ ((Hi_eval ** 3.0)[:,np.newaxis] * W_star)
+                wjt_Pi_Pi_Pi_wk[:,i,:] = (W_star.T @ ((Hi_eval ** 3.0)[:,np.newaxis] * W_star))#[:,np.newaxis,:]
             else:
-                # for j in range(c+1): # Loop for wj
-                #     #for k in range(c+1): # Loop for wk
-                #     for k in range(j,c+1): # Loop for wk
-                #         wjt_Pi_Pi_Pi_wk[j,i,k] = wjt_Pi_Pi_Pi_wk[j,i-1,k] \
-                #                                     - wjt_Pi_wk[j,i-1,i-1] * wjt_Pi_wk[k,i-1,i-1] * ((wjt_Pi_Pi_wk[i-1,i-1,i-1] ** 2.0) / (wjt_Pi_wk[i-1,i-1,i-1] ** 3.0)) \
-                #                                     - wjt_Pi_wk[j,i-1,i-1] * wjt_Pi_Pi_Pi_wk[k,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1] \
-                #                                     - wjt_Pi_wk[k,i-1,i-1] * wjt_Pi_Pi_Pi_wk[j,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1] \
-                #                                     - wjt_Pi_Pi_wk[j,i-1,i-1] * wjt_Pi_Pi_wk[k,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1] \
-                #                                     + wjt_Pi_wk[j,i-1,i-1] * wjt_Pi_Pi_wk[k,i-1,i-1] * wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0) \
-                #                                     + wjt_Pi_wk[k,i-1,i-1] * wjt_Pi_Pi_wk[j,i-1,i-1] * wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0) \
-                #                                     + wjt_Pi_wk[j,i-1,i-1] * wjt_Pi_wk[k,i-1,i-1] * wjt_Pi_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)
-                        
-                #         wjt_Pi_Pi_Pi_wk[k,i,j] = wjt_Pi_Pi_Pi_wk[j,i,k]
-
                 # wjt_Pi_Pi_Pi_wk[:,i,:] = wjt_Pi_Pi_Pi_wk[:,i-1,:] \
                 #                                     - np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) * ((wjt_Pi_Pi_wk[i-1,i-1,i-1] ** 2.0) / (wjt_Pi_wk[i-1,i-1,i-1] ** 3.0)) \
-                #                                     - np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_Pi_wk[:,i-1,i-1]) / wjt_Pi_wk[i-1,i-1,i-1] \
-                #                                     - np.outer(wjt_Pi_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) / wjt_Pi_wk[i-1,i-1,i-1] \
-                #                                     - np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) / wjt_Pi_wk[i-1,i-1,i-1] \
-                #                                     + np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)) \
-                #                                     + np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)) \
+                #                                     + ( - np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_Pi_wk[:,i-1,i-1]) \
+                #                                     - np.outer(wjt_Pi_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) \
+                #                                     - np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1])) / wjt_Pi_wk[i-1,i-1,i-1] \
+                #                                     + (np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) \
+                #                                     + np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1])) * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)) \
                 #                                     + np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) * (wjt_Pi_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0))
-                
+                # wjt_Pi_Pi_Pi_wk[:,i,:] = wjt_Pi_Pi_Pi_wk[:,i-1,:] \
+                #                                     - np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) * ((wjt_Pi_Pi_wk[i-1,i-1,i-1] ** 2.0) / (wjt_Pi_wk[i-1,i-1,i-1] ** 3.0)) \
+                #                                     - (transpose_sum(np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_Pi_wk[:,i-1,i-1])) \
+                #                                     + np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1])) / wjt_Pi_wk[i-1,i-1,i-1] \
+                #                                     + transpose_sum(np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1])) * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)) \
+                #                                     + np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) * (wjt_Pi_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0))
+                # wjt_Pi_Pi_Pi_wk[:,i,:] = wjt_Pi_Pi_Pi_wk[:,i-1,:] \
+                #                                     - np.outer(wjt_Pi_wk[:,i-1,i-1] * ((wjt_Pi_Pi_wk[i-1,i-1,i-1] ** 2.0) / (wjt_Pi_wk[i-1,i-1,i-1] ** 3.0)), wjt_Pi_wk[:,i-1,i-1]) \
+                #                                     - transpose_sum(np.outer(wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_Pi_wk[:,i-1,i-1])) \
+                #                                     - np.outer(wjt_Pi_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) \
+                #                                     + transpose_sum(np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0))) \
+                #                                     + np.outer(wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_wk[:,i-1,i-1])
+                # wjt_Pi_Pi_Pi_wk[:,i,:] = wjt_Pi_Pi_Pi_wk[:,i-1,:] \
+                #                                     - np.outer(wjt_Pi_wk[:,i-1,i-1] * ((wjt_Pi_Pi_wk[i-1,i-1,i-1] ** 2.0) / (wjt_Pi_wk[i-1,i-1,i-1] ** 3.0)), wjt_Pi_wk[:,i-1,i-1]) \
+                #                                     - transpose_sum(np.outer(wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_Pi_wk[:,i-1,i-1])) \
+                #                                     - np.outer(wjt_Pi_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) \
+                #                                     + transpose_sum(np.outer(wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_Pi_wk[:,i-1,i-1])) \
+                #                                     + np.outer(wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_wk[:,i-1,i-1])
                 wjt_Pi_Pi_Pi_wk[:,i,:] = wjt_Pi_Pi_Pi_wk[:,i-1,:] \
-                                                    - np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) * ((wjt_Pi_Pi_wk[i-1,i-1,i-1] ** 2.0) / (wjt_Pi_wk[i-1,i-1,i-1] ** 3.0)) \
-                                                    + ( - np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_Pi_wk[:,i-1,i-1]) \
-                                                    - np.outer(wjt_Pi_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) \
-                                                    - np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1])) / wjt_Pi_wk[i-1,i-1,i-1] \
-                                                    + (np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) \
-                                                    + np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1])) * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)) \
-                                                    + np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) * (wjt_Pi_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0))
-        print(f"Pi @ Pi @ Pi: {round(time.time() - start, 4)} s")
+                                                    - np.outer(wjt_Pi_wk[:,i-1,i-1] * ((wjt_Pi_Pi_wk[i-1,i-1,i-1] ** 2.0) / (wjt_Pi_wk[i-1,i-1,i-1] ** 3.0)), wjt_Pi_wk[:,i-1,i-1]) \
+                                                    - np.outer(wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_Pi_wk[:,i-1,i-1]) \
+                                                    - np.outer(wjt_Pi_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1]) \
+                                                    - np.outer(wjt_Pi_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) \
+                                                    + np.outer(wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_Pi_wk[:,i-1,i-1]) \
+                                                    + np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0))) \
+                                                    + np.outer(wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_wk[:,i-1,i-1])
+            wjt_Pi_Pi_Pi_wk[i,i,i] = max(wjt_Pi_Pi_Pi_wk[i,i,i], MIN_VAL)
 
+                # wjt_Pi_Pi_Pi_wk[:,i:,:] += (- np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) * ((wjt_Pi_Pi_wk[i-1,i-1,i-1] ** 2.0) / (wjt_Pi_wk[i-1,i-1,i-1] ** 3.0)) \
+                #                                     + ( - np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_Pi_wk[:,i-1,i-1]) \
+                #                                     - np.outer(wjt_Pi_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) \
+                #                                     - np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1])) / wjt_Pi_wk[i-1,i-1,i-1] \
+                #                                     + (np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) \
+                #                                     + np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1])) * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)) \
+                #                                     + np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) * (wjt_Pi_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)))[:,np.newaxis,:]
+                
+        #print(f"Pi @ Pi @ Pi: {round(time.time() - start, 4)} s")
 
-        # Trace Computations
-        # for i in range(c+1): # Loop for Pi
-        #     if i == 0:
-        #         tr_Pi_Pi[i] = np.sum(Hi_eval ** 2.0)
-        #     else:
-        #         tr_Pi_Pi[i] = tr_Pi_Pi[i-1] \
-        #                     + ((wjt_Pi_Pi_wk[i-1,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1]) ** 2.0) \
-        #                     - 2 * (wjt_Pi_Pi_Pi_wk[i-1,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1])
 
         # Use np.cumsum to compute trace
-        start = time.time()
+        #start = time.time()
         tr_Pi_Pi[0] = np.sum(Hi_eval ** 2.0)
 
         if c > 0:
-            tr_Pi_Pi[1:] = ((wjt_Pi_Pi_wk[range(c),range(c),range(c)] / wjt_Pi_wk[range(c),range(c),range(c)]) ** 2.0) \
-                            - 2 * (wjt_Pi_Pi_Pi_wk[range(c),range(c),range(c)] / wjt_Pi_wk[range(c),range(c),range(c)])
+            tr_Pi_Pi[1:] = ((wjt_Pi_Pi_wk[indices,indices,indices] / wjt_Pi_wk[indices,indices,indices]) ** 2.0) \
+                            - 2 * (wjt_Pi_Pi_Pi_wk[indices,indices,indices] / wjt_Pi_wk[indices,indices,indices])
             tr_Pi_Pi = np.cumsum(tr_Pi_Pi)
-        print(f"Trace Pi @ Pi: {round(time.time() - start, 4)} s")
+        #print(f"Trace Pi @ Pi: {round(time.time() - start, 4)} s")
 
-
+        #start = time.time()
         precompute_dict = {
                             'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c],
                             'wjt_Pi_Pi_wk'              : wjt_Pi_Pi_wk[:c, :, :c],
@@ -348,11 +344,20 @@ cpdef precompute_mat(float lam,
                             'yt_Pi_Pi_y'                : wjt_Pi_Pi_wk[c, :, c].reshape(-1),
                             'yt_Pi_Pi_Pi_y'             : wjt_Pi_Pi_Pi_wk[c, :, c].reshape(-1),
                             'logdet_Wt_W'               : np.linalg.slogdet(W.T @ W)[1],
-                            'logdet_Wt_H_inv_W'         : np.linalg.slogdet(W.T @ (Hi_eval[:,np.newaxis] * W))[1],
-                            'logdet_H_inv'              : np.sum(np.log(Hi_eval)),
+                            'logdet_Wt_H_inv_W'         : logdet_Wt_H_inv_W,
+                            'logdet_H'              : np.sum(np.log(lam*eigenVals + 1.0)),
                             }
+        #print(f"Precompute: {round(time.time() - start, 4)} s")
+        
+        #print(f"Runtime: {round(time.time() - start, 4)} s")
 
         return precompute_dict
+
+@cython.boundscheck(False) # turn off bounds-checking for entire function
+@cython.wraparound(False)  # turn off negative index wrapping for entire function
+@cython.cdivision(True)
+cdef transpose_sum(np.ndarray[np.float32_t, ndim=2] mat):
+    return mat + mat.T
 
 @cython.boundscheck(False) # turn off bounds-checking for entire function
 @cython.wraparound(False)  # turn off negative index wrapping for entire function
@@ -409,9 +414,11 @@ cpdef float newton(float lam,
                    np.ndarray[np.float32_t, ndim=1] eigenVals, 
                    np.ndarray[np.float32_t, ndim=2] Y, 
                    np.ndarray[np.float32_t, ndim=2] W,
-                   bint precompute=False):
+                   bint precompute=False,
+                   float lambda_min=1e-5,
+                   float lambda_max=1e5):
 
-    cdef float lambda_min = lam
+    cdef float lambda_root = lam
     cdef int iter = 0
     cdef float r_eps = 0.0
     cdef float lambda_new, ratio, d1, d2
@@ -423,15 +430,15 @@ cpdef float newton(float lam,
 
     while True:
         if precompute:
-            precompute_dict = precompute_mat(lam, eigenVals, W, Y, full=True)
+            precompute_dict = precompute_mat(lambda_root, eigenVals, W, Y, full=True)
 
-            d1 = likelihood_derivative1_restricted_lambda_overload(lam=lam,
+            d1 = likelihood_derivative1_restricted_lambda_overload(lam=lambda_root,
                                                     n=n,
                                                     c=c,
                                                     yt_Px_y=precompute_dict['yt_Pi_y'][c],
                                                     yt_Px_Px_y=precompute_dict['yt_Pi_Pi_y'][c],
                                                     tr_Px=precompute_dict['tr_Pi'][c])
-            d2 = likelihood_derivative2_restricted_lambda_overload(lam=lam,
+            d2 = likelihood_derivative2_restricted_lambda_overload(lam=lambda_root,
                                                             n=n,
                                                             c=c,
                                                             yt_Px_y=precompute_dict['yt_Pi_y'][c],
@@ -440,8 +447,8 @@ cpdef float newton(float lam,
                                                             tr_Px=precompute_dict['tr_Pi'][c],
                                                             tr_Px_Px=precompute_dict['tr_Pi_Pi'][c])
         else:
-            d1 = likelihood_derivative1_restricted_lambda(lambda_min, eigenVals, Y, W)
-            d2 = likelihood_derivative2_restricted_lambda(lambda_min, eigenVals, Y, W)
+            d1 = likelihood_derivative1_restricted_lambda(lambda_root, eigenVals, Y, W)
+            d2 = likelihood_derivative2_restricted_lambda(lambda_root, eigenVals, Y, W)
 
         with cython.nogil:
             ratio = d1/d2
@@ -449,20 +456,28 @@ cpdef float newton(float lam,
         if np.sign(ratio) * np.sign(d1) * np.sign(d2) <= 0.0:
             break
 
-        lambda_new = lambda_min - ratio
-        r_eps = fabs(lambda_new - lambda_min) / fabs(lambda_min)
+        lambda_new = lambda_root - ratio
+        r_eps = fabs(lambda_new - lambda_root) / fabs(lambda_root)
 
-        if lambda_new < 0.0 or np.isnan(lambda_new) or np.isinf(lambda_new):
+        if lambda_new < lambda_min:
+            lambda_new = lambda_min
             break
 
-        lambda_min = lambda_new
+        if lambda_new > lambda_max:
+            lambda_new = lambda_max
+            break
+
+        if np.isnan(lambda_new) or np.isinf(lambda_new):
+            break
+
+        lambda_root = lambda_new
 
         if r_eps < 1e-5 or iter > 100:
             break
 
         iter += 1
 
-    return lambda_min
+    return lambda_root
 
 @cython.boundscheck(False) # compiler directive
 @cython.wraparound(False) # compiler directive
@@ -553,11 +568,46 @@ cpdef calc_beta_vg_ve_restricted(np.ndarray[np.float32_t, ndim=1] eigenVals,
     
     cdef np.ndarray[np.float32_t, ndim=2] beta_vec = np.linalg.inv(W_x_t_H_inv @ W_x) @ (W_x_t_H_inv @ Y)
     
-    cdef np.float32_t beta = beta_vec[c,0] #compute_at_Pi_b(lam, c, mod_eig, W, x, Y) / max(compute_at_Pi_b(lam, c, mod_eig, W, x, x), MIN_VAL) # Double check this property holds, but I think it does bc positive symmetric
+    #cdef np.float32_t beta = beta_vec[c,0] #compute_at_Pi_b(lam, c, mod_eig, W, x, Y) / max(compute_at_Pi_b(lam, c, mod_eig, W, x, x), MIN_VAL) # Double check this property holds, but I think it does bc positive symmetric
+    cdef np.float32_t beta = compute_at_Pi_b(lam, c, mod_eig, W, x, Y) / max(compute_at_Pi_b(lam, c, mod_eig, W, x, x), MIN_VAL) # Double check this property holds, but I think it does bc positive symmetric
 
     cdef np.float32_t ytPxy = max(compute_at_Pi_b(lam, c+1, mod_eig, W_x, Y, Y), MIN_VAL)
 
     cdef np.float32_t se_beta = np.sqrt(ytPxy) / (np.sqrt(max(compute_at_Pi_b(lam, c, mod_eig, W, x, x), MIN_VAL)) * np.sqrt((n - c - 1)))
+
+    cdef np.float32_t tau = (n-c-1)/ytPxy
+
+    return np.float32(beta), beta_vec, np.float32(se_beta), np.float32(tau)
+
+@cython.boundscheck(False) # turn off bounds-checking for entire function
+@cython.wraparound(False)  # turn off negative index wrapping for entire function
+@cython.cdivision(True)
+cpdef calc_beta_vg_ve_restricted_overload(np.ndarray[np.float32_t, ndim=1] eigenVals,
+                                        np.ndarray[np.float32_t, ndim=2] W, 
+                                        np.ndarray[np.float32_t, ndim=2] x, 
+                                        np.float32_t lam, 
+                                        np.ndarray[np.float32_t, ndim=2] Y):
+    cdef np.ndarray[np.float32_t, ndim=2] W_x = np.c_[W,x]
+
+    cdef dict precompute_dict = precompute_mat(lam, eigenVals, W_x, Y, full=False)
+
+    cdef int n, c
+    n = W.shape[0]
+    c = W.shape[1]
+    
+    cdef np.ndarray[np.float32_t, ndim=1] mod_eig = lam*eigenVals + 1.0
+
+    cdef np.ndarray[np.float32_t, ndim=2] W_x_t_H_inv = ((1.0/mod_eig)[:,np.newaxis] * W_x).T
+    
+    cdef np.ndarray[np.float32_t, ndim=2] beta_vec = np.linalg.inv(W_x_t_H_inv @ W_x) @ (W_x_t_H_inv @ Y)
+    
+    #cdef np.float32_t beta = beta_vec[c,0] #compute_at_Pi_b(lam, c, mod_eig, W, x, Y) / max(compute_at_Pi_b(lam, c, mod_eig, W, x, x), MIN_VAL) # Double check this property holds, but I think it does bc positive symmetric
+    cdef np.float32_t beta = precompute_dict['wjt_Pi_wk'][c,c,c+1] / precompute_dict['wjt_Pi_wk'][c,c,c]
+
+    cdef np.float32_t ytPxy = precompute_dict['yt_Pi_y'][c+1] #max(compute_at_Pi_b(lam, c+1, mod_eig, W_x, Y, Y), MIN_VAL)
+
+    cdef np.float32_t se_beta = np.sqrt(ytPxy) / (np.sqrt(max(precompute_dict['wjt_Pi_wk'][c,c,c], MIN_VAL)) * np.sqrt((n - c - 1)))
+    #cdef np.float32_t se_beta = np.sqrt(ytPxy) / (np.sqrt(max(compute_at_Pi_b(lam, c, mod_eig, W, x, x), MIN_VAL)) * np.sqrt((n - c - 1)))
 
     cdef np.float32_t tau = (n-c-1)/ytPxy
 
@@ -839,14 +889,14 @@ cpdef likelihood_restricted_lambda_overload(float lam,
                                     int n,
                                     int c,
                                     float yt_Px_y,
-                                    float logdet_H_inv,
+                                    float logdet_H,
                                     float logdet_Wt_W,
                                     float logdet_Wt_H_inv_W):
 
     cdef np.float32_t result = 0.5*(n - c)*log(0.5*(n - c)/np.pi)
     result = result - 0.5*(n - c)
     result = result + 0.5*logdet_Wt_W
-    result = result - 0.5 * logdet_H_inv
+    result = result - 0.5 * logdet_H
 
     result = result - 0.5*logdet_Wt_H_inv_W
 

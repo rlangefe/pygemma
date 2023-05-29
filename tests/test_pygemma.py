@@ -106,7 +106,7 @@ def run_function_test(function, parameters):
         console.print_exception(show_locals=False)
         failed = True
    
-    diff = str(round(time.time() - start, 4))
+    diff = str(round(time.time() - start, 8))
     if failed:
         console.log(f"[red]Failed {function.__name__} - {diff} s")
         return 1
@@ -129,19 +129,21 @@ def generate_test_matrices(n=1000, covars=10, seed=42):
     K = np.abs(np.tril(K) + np.tril(K, -1).T)
     K = np.dot(K, K.T)
     eigenVals, U = np.linalg.eig(K)
+    eigenVals = np.maximum(0, eigenVals)
     W = np.random.rand(n, covars)
     W = np.c_[W, np.ones(n)]
     x = np.random.choice([0,1,2], 
                         size=(n, 1),
                         replace=True)
     Y = np.random.rand(n, 1).reshape(-1,1)
-    lam = 5
+    lam = 500
     tau = 10
     beta = np.random.rand(covars+2, 1)
 
     return x.astype(np.float32), Y.astype(np.float32), W.astype(np.float32), eigenVals.astype(np.float32), U.astype(np.float32), np.float32(lam), beta.astype(np.float32), np.float32(tau)
 
 with console.status("[bold green]Running pyGEMMA Function Run Tests...") as status:
+    print(np.show_config())
 
     # Seed tests
     np.random.seed(42)
@@ -153,7 +155,7 @@ with console.status("[bold green]Running pyGEMMA Function Run Tests...") as stat
     x, Y, W, eigenVals, U, lam, beta, tau = generate_test_matrices(n=n, covars=covars)
     W = np.c_[W,x]
 
-    precompute_mat = lmm.precompute_mat(lam, eigenVals, U.T @ W, U.T @ Y)
+    precompute_mat = lmm.precompute_mat(lam, eigenVals, U.T @ W, U.T @ Y, full=True)
     print(W.shape)
     Px = pygemma_model.compute_Pc(eigenVals, U, W, lam)
     print('Y.T @ Px @ Y: ', float(Y.T @ Px @ Y), precompute_mat['yt_Pi_y'][W.shape[1]])
@@ -162,7 +164,6 @@ with console.status("[bold green]Running pyGEMMA Function Run Tests...") as stat
     print('Tr(Px): ', np.trace(Px), precompute_mat['tr_Pi'][W.shape[1]])
     print('Tr(Px @ Px): ', np.trace(Px @ Px), precompute_mat['tr_Pi_Pi'][W.shape[1]])
 
-    exit(0)
     # print(lmm.compute_at_Pi_Pi_Pi_b(lam, W.shape[1],
     #                   lam*eigenVals + 1.0,
     #                   U.T @ W,
@@ -173,18 +174,24 @@ with console.status("[bold green]Running pyGEMMA Function Run Tests...") as stat
     Y = U.T @ Y
     W = U.T @ W
 
+    n, c = W.shape
+
     #warnings.filterwarnings('error')
 
     for lam in [1e-3, 5.0, 400, 1e3, 1e5]:
-        console.log(f'Test Parameters: n={n}, lam={lam}, tau={tau}')
+        console.log(f'\nTest Parameters: n={n}, lam={lam}, tau={tau}')
         
+        precompute_mat = lmm.precompute_mat(lam, eigenVals, np.c_[W, x], Y)
+
         functions_and_args = [
                                 # (lmm.compute_Pc, [eigenVals, W, lam]),
                                 # (pygemma_model.compute_Pc, [eigenVals, W, lam]),
                                 (lmm.precompute_mat, [lam, eigenVals, np.c_[W, x], Y]),
+                                (lmm.calc_beta_vg_ve_restricted, [eigenVals, W, x.reshape(-1,1), lam, Y]),
                                 (lmm.likelihood_lambda, [lam, eigenVals, Y, W]),
                                 (lmm.likelihood_derivative1_lambda, [lam, eigenVals, Y, W]),
                                 (lmm.likelihood_derivative2_lambda, [lam, eigenVals, Y, W]),
+                                (lmm.newton, [lam, eigenVals, Y,  np.c_[W, x], True]),
                                 (lmm.calc_lambda, [eigenVals, Y, W]),
                                 (lmm.calc_lambda_restricted, [eigenVals, Y, W]),
                                 (lmm.likelihood, [lam, tau, beta, eigenVals, Y, W]),
@@ -193,6 +200,9 @@ with console.status("[bold green]Running pyGEMMA Function Run Tests...") as stat
                                 (lmm.likelihood_derivative1_restricted_lambda, [lam, eigenVals, Y, W]),
                                 (lmm.wrapper_likelihood_derivative1_restricted_lambda, [lam, eigenVals, Y, W]),
                                 (lmm.likelihood_derivative2_restricted_lambda, [lam, eigenVals, Y, W]),
+                                (lmm.likelihood_restricted_lambda_overload, [lam, n, c, precompute_mat['yt_Pi_y'][c], precompute_mat['logdet_H'], precompute_mat['logdet_Wt_W'],precompute_mat['logdet_Wt_H_inv_W']]),
+                                (lmm.likelihood_derivative1_restricted_lambda_overload, [lam, n, c, precompute_mat['yt_Pi_y'][c], precompute_mat['yt_Pi_Pi_y'][c], precompute_mat['tr_Pi'][c]]),
+                                (lmm.likelihood_derivative2_restricted_lambda_overload, [lam, n, c, precompute_mat['yt_Pi_y'][c], precompute_mat['yt_Pi_Pi_y'][c], precompute_mat['yt_Pi_Pi_Pi_y'][c], precompute_mat['tr_Pi'][c], precompute_mat['tr_Pi_Pi'][c]]),
                                 (lmm.trace_Pi, [lam, W.shape[1], lam*eigenVals+1.0, W]),
                                 (lmm.trace_Pi_Pi, [lam, W.shape[1], lam*eigenVals+1.0, W]),
                                 (lmm.compute_at_Pi_b, [lam, W.shape[1], lam*eigenVals+1.0, W, Y, Y]),
@@ -201,7 +211,44 @@ with console.status("[bold green]Running pyGEMMA Function Run Tests...") as stat
                             ]
         
         run_test_list(functions_and_args)
+
+# Function to simulate GWAS dataset
+def simulate_gwas_dataset(n=1000, p=10000, c=100, seed=42):
+    lam = 20
+    tau_inv = 5
+    np.random.seed(seed)
     
+    # Generate fake SNP names and posisions from chr 1
+    # Format EX: 1:182686:A:G
+    snp_names = [f'1:{i}:A:G' for i in range(1, p+1)]
+    
+    # Generate fake SNP data
+    snp_data = np.random.randint(0, 3, size=(n, p))
+    snp_data = snp_data.astype(np.float32)
+    snp_data_norm = (snp_data - np.mean(snp_data, axis=0))/np.std(snp_data, axis=0)
+
+    # Relatedness matrix
+    K = snp_data_norm @ snp_data_norm.T / p
+
+    # Choose significant SNP beta values
+    # Make peak at c/2
+    beta = np.random.uniform(low=0.5, high=1.5, size=(c, 1)) + np.random.normal(loc=0.0, scale=0.1, size=(c, 1)) + (np.abs((c/2) - np.arange(0, c).reshape(-1,1)) / c).reshape(-1,1)
+
+    # Create phenotype
+    Y = snp_data[:,0:c] @ beta + np.random.normal(loc=0.0, scale=tau_inv, size=(n, 1)) 
+
+    # Add multivariate normal to phenotype
+    Y = Y + np.random.multivariate_normal(mean=np.zeros(n), cov=lam*tau_inv*K, size=1).T
+
+    Y = pd.DataFrame(Y, columns=['Phenotype'])
+
+    X = pd.DataFrame(snp_data, columns=snp_names)
+
+    return X, Y, K, beta
+
+
+# Simulate GWAS data
+snp_data, Y, K, beta = simulate_gwas_dataset(n=1000, p=10000, c=100, seed=42)
 
 DATADIR = os.path.join("..","data")
 dataset_list = [
@@ -211,25 +258,54 @@ dataset_list = [
             'covars'  : None,
             'pheno'   : os.path.join(DATADIR, "GD449.example.pheno.tsv"),
             'kinship' : None
+        },
+        {
+            'name'    : 'SimData',
+            'snps'    : snp_data,
+            'covars'  : None,
+            'pheno'   : Y,
+            'kinship' : K
         }
     ]
 
 for dataset in dataset_list:
     dataset_name = dataset['name']
 
-    snps = pd.read_csv(dataset['snps'])
-    pheno = pd.read_csv(dataset['pheno'], sep='\t', index_col='IID')
+    if dataset_name == 'Homework3':
+        snps = pd.read_csv(dataset['snps'])
+        pheno = pd.read_csv(dataset['pheno'], sep='\t', index_col='IID')
 
-    X = snps.values[:,7:].T.astype(np.float32)
-    X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
-    X = X
+        X = snps.values[:,7:].T.astype(np.float32)
+        X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
+    else:
+        snps = dataset['snps']
+        pheno = dataset['pheno']
+
+        X = snps.values
+        X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
+
+        snp_names = snps.columns
+        snps = snps.transpose()
+        snps['SNP'] = snp_names
+
+        # Extract POS and CHR from SNP column
+        snps_values = snps['SNP'].str.split(':', expand=True)
+        snps_values.columns = ['CHR', 'POS', 'REF', 'ALT']
+
+        # Add to snps dataframe
+        snps = pd.concat([snps_values, snps], axis=1)
+
+
 
     n,p = X.shape
 
-    if not dataset['kinship']:
+    if dataset['kinship'] is None:
         K = X @ X.T / p
     else:
-        K = pd.read_csv(dataset['kinship'], header=None).values
+        if isinstance(dataset['kinship'], str):
+            K = pd.read_csv(dataset['kinship'], header=None).values
+        else:
+            K = dataset['kinship']
 
     #K = ((K - np.mean(K, axis=0)) / np.std(K, axis=0)).astype(np.float32)
 
@@ -242,11 +318,12 @@ for dataset in dataset_list:
     X = X[:,sample]
     pheno_name = pheno.columns[0]
     Y = pheno[pheno_name].values.reshape(-1,1).astype(np.float32)
-    #Y = qnorm.quantile_normalize(Y, axis=1)
-    #Y = (Y-np.mean(Y))/np.std(Y)
+    Y = qnorm.quantile_normalize(Y, axis=1)
+    Y = (Y-np.mean(Y))/np.std(Y)
+    Y = Y.reshape(-1,1)
     #print(Y.mean(), Y.std())
     # Likelihood tests
-    x = X[:,2].reshape(-1,1)
+    x = X[:,0].reshape(-1,1)
     #x = (x - np.mean(x))/np.std(x)
     n = Y.shape[0]
     #print(pcs.mean(axis=0), pcs.std(axis=0))
@@ -255,7 +332,8 @@ for dataset in dataset_list:
     #W = np.ones(shape=(n, 1)).astype(np.float32)
     
     #W = np.ones(shape=(n, 1)).astype(np.float32)
-    lam_vals = np.array([np.power(10.0, i) for i in np.arange(-5.0,5.5,0.1)], dtype=np.float32)
+    step_size = 0.05
+    lam_vals = np.array([np.power(10.0, i) for i in np.arange(-5.0,5.0+step_size,step_size)], dtype=np.float32)
     eigenVals, U = np.linalg.eig(K)
     eigenVals = np.maximum(0, eigenVals)
 
@@ -290,52 +368,56 @@ for dataset in dataset_list:
     plt.savefig(os.path.join(OUTPUT, "yt_Px_y.png"))
     plt.clf()
 
-    lik = [lmm.likelihood_restricted_lambda(l, eigenVals, Y_star, W_x_star) for l in lam_vals]
-    # warnings.filterwarnings('error')
-    # lik = []
-    # for l in lam_vals:
-    #     try:
-    #         lik.append(lmm.likelihood_restricted_lambda(l, eigenVals, Y_star, W_x_star))
-    #     except Warning as e:
-    #         mod_eig = l*eigenVals + 1.0
-    #         print(e)
-    #         print('Error: ', l)
-    #         print(np.any(l*eigenVals + 1.0 < 0))
-    #         print(np.sum(np.log(l*eigenVals + 1.0)))
-    #         print(lmm.compute_at_Pi_b(lam, W.shape[1], l*eigenVals + 1.0, W, Y, Y))
-    #         print(np.log(lmm.compute_at_Pi_b(lam, W.shape[1], l*eigenVals + 1.0, W, Y, Y)))
-    #         print(np.linalg.slogdet(W.T @ W))
-    #         print(np.linalg.slogdet(W.T @ (W / mod_eig[:, np.newaxis])))
-    #         exit(0)
+    c = W_star.shape[1]
 
-    lik_der1 = [lmm.likelihood_derivative1_restricted_lambda(l, eigenVals, Y_star, W_x_star) for l in lam_vals]
-    lik_der2 = [lmm.likelihood_derivative2_restricted_lambda(l, eigenVals, Y_star, W_x_star) for l in lam_vals]
+    # lik = [lmm.likelihood_restricted_lambda(l, eigenVals, Y_star, W_x_star) for l in lam_vals]
+    # lik_der1 = [lmm.likelihood_derivative1_restricted_lambda(l, eigenVals, Y_star, W_x_star) for l in lam_vals]
+    # lik_der2 = [lmm.likelihood_derivative2_restricted_lambda(l, eigenVals, Y_star, W_x_star) for l in lam_vals]
     lam_temp = lmm.calc_lambda_restricted(eigenVals, Y_star, W_x_star)
+
+    lik = []
+    lik_der1 = []
+    lik_der2 = []
+
+    for l in track(lam_vals, description='Calculating Likelihoods...'):
+        Px = pygemma_model.compute_Pc(eigenVals, U, np.c_[W,x.reshape(-1,1)], l)
+        lik.append(0.5*(n-c-1)*np.log((n-c-1)/(2*np.pi)) - 0.5*(n-c-1) + 0.5*np.linalg.slogdet(W_x_star.T @ W_x_star)[1] - 0.5*np.sum(np.log(l*eigenVals + 1.0)) - 0.5*np.linalg.slogdet(W_x_star.T @ (1.0/(l*eigenVals + 1.0)[:,np.newaxis] * W_x_star))[1] - 0.5*(n-c-1)*(Y.T @ Px @ Y))
+        #precompute_mat = lmm.precompute_mat(l, eigenVals, W_x_star, Y_star)
+        #lik.append(lmm.likelihood_restricted_lambda_overload(l, n, W_star.shape[1], precompute_mat['yt_Pi_y'][W_star.shape[1]], precompute_mat['logdet_H'], precompute_mat['logdet_Wt_W'],precompute_mat['logdet_Wt_H_inv_W']))
+        lik_der1.append(lmm.likelihood_derivative1_restricted_lambda_overload(l, n, W_star.shape[1], precompute_mat['yt_Pi_y'][W_star.shape[1]], precompute_mat['yt_Pi_Pi_y'][W_star.shape[1]], precompute_mat['tr_Pi'][W_star.shape[1]]))
+        lik_der2.append(lmm.likelihood_derivative2_restricted_lambda_overload(l, n, W_star.shape[1], precompute_mat['yt_Pi_y'][W_star.shape[1]], precompute_mat['yt_Pi_Pi_y'][W_star.shape[1]], precompute_mat['yt_Pi_Pi_Pi_y'][W_star.shape[1]], precompute_mat['tr_Pi'][W_star.shape[1]], precompute_mat['tr_Pi_Pi'][W_star.shape[1]]))
+
     print('Best Lambda: ', lam_temp)
+    print('Best Likelihood: ', lmm.likelihood_restricted_lambda(lam_temp, eigenVals, Y_star, W_x_star))
+    print('Best Likelihood: ', lmm.likelihood_restricted_lambda(1e-5, eigenVals, Y_star, W_x_star))
+    precompute_mat = lmm.precompute_mat(lam_temp, eigenVals, W_x_star, Y_star)
+    print('Best Likelihood Precompute: ', lmm.likelihood_restricted_lambda_overload(lam_temp, n, W_star.shape[1], precompute_mat['yt_Pi_y'][W_star.shape[1]], precompute_mat['logdet_H'], precompute_mat['logdet_Wt_W'],precompute_mat['logdet_Wt_H_inv_W']))
     print('Results: ', lmm.calc_beta_vg_ve_restricted(eigenVals, W_star, x_star, lam_temp, Y_star))
     print('Likelihood Min and Max: ', np.min(lik), np.max(lik))
     print('Likelihood Derivative 1 Min and Max: ', np.min(lik_der1), np.max(lik_der1))
     print('Likelihood Derivative 1 Min and Max above 1e2: ', np.min(np.array(lik_der1)[lam_vals > 1e2]), np.max(np.array(lik_der1)[lam_vals > 1e2]))
     print('Likelihood Derivative 2 Min and Max: ', np.min(lik_der2), np.max(lik_der2))
     plt.scatter(x=lam_vals, y=lik)
+    plt.axvline(x=lam_temp, color='blue')
     plt.tight_layout()
     plt.savefig(os.path.join(OUTPUT, "likelihood.png"))
     plt.clf()
     plt.scatter(x=lam_vals, y=lik_der1, c='red')
+    plt.axvline(x=lam_temp, color='blue')
     plt.tight_layout()
     plt.savefig(os.path.join(OUTPUT, "likelihood_derivative.png"))
     plt.clf()
     plt.scatter(x=lam_vals, y=lik_der2, c='red')
+    plt.axvline(x=lam_temp, color='blue')
     plt.tight_layout()
     plt.savefig(os.path.join(OUTPUT, "likelihood_derivative2.png"))
     plt.clf()
+    exit(0)
 
     for pheno_name in pheno.columns:
         Y = pheno[pheno_name].values.reshape(-1,1).astype(np.float32)
         Y = qnorm.quantile_normalize(Y, axis=1)
-        #(Y-np.mean(Y))/np.std(Y)
-
-        #Y = (Y - Y.mean())/Y.std()
+        Y = (Y-np.mean(Y))/np.std(Y)
         Y = Y.reshape(-1,1)
         
 
@@ -345,7 +427,7 @@ for dataset in dataset_list:
                                                             W,
                                                             K)
         
-        print('GEMMA Run Time: ', total_time)
+        print('GEMMA Run Time:', total_time, 's')
         print(data_results.head(10))
         theoretical = np.linspace(1/len(data_results),1.0,len(data_results))
         pvals = np.sort(data_results['p_wald'])
