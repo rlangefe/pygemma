@@ -328,17 +328,24 @@ for dataset in dataset_list:
     n = Y.shape[0]
     #print(pcs.mean(axis=0), pcs.std(axis=0))
 
-    W = np.c_[np.ones(shape=(n, 1)), pcs].astype(np.float32)
-    #W = np.ones(shape=(n, 1)).astype(np.float32)
+    #W = np.c_[np.ones(shape=(n, 1)), pcs].astype(np.float32)
+    W = np.ones(shape=(n, 1)).astype(np.float32)
     
     #W = np.ones(shape=(n, 1)).astype(np.float32)
     step_size = 0.05
     lam_vals = np.array([np.power(10.0, i) for i in np.arange(-5.0,5.0+step_size,step_size)], dtype=np.float32)
     eigenVals, U = np.linalg.eig(K)
-    eigenVals = np.maximum(0, eigenVals)
+    eigenVals = np.maximum(1e-10, eigenVals)
 
     eigenVals = eigenVals.astype(np.float32)
     U = U.astype(np.float32)
+
+    # Sort eigenvalues in descending order
+    sorted_indices = np.argsort(eigenVals)
+    eigenVals = eigenVals[sorted_indices]
+
+    # Reorder eigenvectors according to sorted eigenvalues
+    U = U[:, sorted_indices]
 
     # l_star = 117489.7578125
     # Px = pygemma_model.compute_Pc(eigenVals, U, np.c_[W, x], l_star)
@@ -380,18 +387,19 @@ for dataset in dataset_list:
     lik_der2 = []
 
     for l in track(lam_vals, description='Calculating Likelihoods...'):
-        Px = pygemma_model.compute_Pc(eigenVals, U, np.c_[W,x.reshape(-1,1)], l)
-        lik.append(0.5*(n-c-1)*np.log((n-c-1)/(2*np.pi)) - 0.5*(n-c-1) + 0.5*np.linalg.slogdet(W_x_star.T @ W_x_star)[1] - 0.5*np.sum(np.log(l*eigenVals + 1.0)) - 0.5*np.linalg.slogdet(W_x_star.T @ (1.0/(l*eigenVals + 1.0)[:,np.newaxis] * W_x_star))[1] - 0.5*(n-c-1)*(Y.T @ Px @ Y))
-        #precompute_mat = lmm.precompute_mat(l, eigenVals, W_x_star, Y_star)
-        #lik.append(lmm.likelihood_restricted_lambda_overload(l, n, W_star.shape[1], precompute_mat['yt_Pi_y'][W_star.shape[1]], precompute_mat['logdet_H'], precompute_mat['logdet_Wt_W'],precompute_mat['logdet_Wt_H_inv_W']))
-        lik_der1.append(lmm.likelihood_derivative1_restricted_lambda_overload(l, n, W_star.shape[1], precompute_mat['yt_Pi_y'][W_star.shape[1]], precompute_mat['yt_Pi_Pi_y'][W_star.shape[1]], precompute_mat['tr_Pi'][W_star.shape[1]]))
-        lik_der2.append(lmm.likelihood_derivative2_restricted_lambda_overload(l, n, W_star.shape[1], precompute_mat['yt_Pi_y'][W_star.shape[1]], precompute_mat['yt_Pi_Pi_y'][W_star.shape[1]], precompute_mat['yt_Pi_Pi_Pi_y'][W_star.shape[1]], precompute_mat['tr_Pi'][W_star.shape[1]], precompute_mat['tr_Pi_Pi'][W_star.shape[1]]))
+        # Px = pygemma_model.compute_Pc(eigenVals, U, np.c_[W,x.reshape(-1,1)], l)
+        # lik.append(0.5*(n-c-1)*np.log((n-c-1)/(2*np.pi)) - 0.5*(n-c-1) + 0.5*np.linalg.slogdet(W_x_star.T @ W_x_star)[1] - 0.5*np.sum(np.log(l*eigenVals + 1.0)) - 0.5*np.linalg.slogdet(W_x_star.T @ (1.0/(l*eigenVals + 1.0)[:,np.newaxis] * W_x_star))[1] - 0.5*(n-c-1)*np.log(Y.T @ Px @ Y))
+        precompute_mat = lmm.precompute_mat(l, eigenVals, W_x_star, Y_star)
+        #print(l, precompute_mat['yt_Pi_y'][W_x_star.shape[1]], precompute_mat['logdet_H'], precompute_mat['logdet_Wt_W'],precompute_mat['logdet_Wt_H_inv_W'])
+        lik.append(lmm.likelihood_restricted_lambda_overload(l, n, W_x_star.shape[1], precompute_mat['yt_Pi_y'][W_x_star.shape[1]], precompute_mat['logdet_H'], precompute_mat['logdet_Wt_W'],precompute_mat['logdet_Wt_H_inv_W']))
+        lik_der1.append(lmm.likelihood_derivative1_restricted_lambda_overload(l, n, W_x_star.shape[1], precompute_mat['yt_Pi_y'][W_x_star.shape[1]], precompute_mat['yt_Pi_Pi_y'][W_x_star.shape[1]], precompute_mat['tr_Pi'][W_x_star.shape[1]]))
+        #lik_der1.append(lmm.likelihood_derivative1_restricted_lambda(l, eigenVals, Y_star, W_x_star))
+        lik_der2.append(lmm.likelihood_derivative2_restricted_lambda_overload(l, n, W_x_star.shape[1], precompute_mat['yt_Pi_y'][W_x_star.shape[1]], precompute_mat['yt_Pi_Pi_y'][W_x_star.shape[1]], precompute_mat['yt_Pi_Pi_Pi_y'][W_x_star.shape[1]], precompute_mat['tr_Pi'][W_x_star.shape[1]], precompute_mat['tr_Pi_Pi'][W_x_star.shape[1]]))
 
     print('Best Lambda: ', lam_temp)
     print('Best Likelihood: ', lmm.likelihood_restricted_lambda(lam_temp, eigenVals, Y_star, W_x_star))
-    print('Best Likelihood: ', lmm.likelihood_restricted_lambda(1e-5, eigenVals, Y_star, W_x_star))
     precompute_mat = lmm.precompute_mat(lam_temp, eigenVals, W_x_star, Y_star)
-    print('Best Likelihood Precompute: ', lmm.likelihood_restricted_lambda_overload(lam_temp, n, W_star.shape[1], precompute_mat['yt_Pi_y'][W_star.shape[1]], precompute_mat['logdet_H'], precompute_mat['logdet_Wt_W'],precompute_mat['logdet_Wt_H_inv_W']))
+    print('Best Likelihood Precompute: ', lmm.likelihood_restricted_lambda_overload(lam_temp, n, W_x_star.shape[1], precompute_mat['yt_Pi_y'][W_x_star.shape[1]], precompute_mat['logdet_H'], precompute_mat['logdet_Wt_W'],precompute_mat['logdet_Wt_H_inv_W']))
     print('Results: ', lmm.calc_beta_vg_ve_restricted(eigenVals, W_star, x_star, lam_temp, Y_star))
     print('Likelihood Min and Max: ', np.min(lik), np.max(lik))
     print('Likelihood Derivative 1 Min and Max: ', np.min(lik_der1), np.max(lik_der1))
@@ -412,7 +420,24 @@ for dataset in dataset_list:
     plt.tight_layout()
     plt.savefig(os.path.join(OUTPUT, "likelihood_derivative2.png"))
     plt.clf()
-    exit(0)
+
+    for l in [0.000010,
+                0.000100,
+                0.001000,
+                0.010000,
+                0.100000,
+                1.000000,
+                10.000000,
+                100.000000,
+                1000.000000,
+                10000.000000]:
+        precompute_mat = lmm.precompute_mat(l, eigenVals, W_x_star, Y_star)
+        # Px = pygemma_model.compute_Pc(eigenVals, U, np.c_[W,x.reshape(-1,1)], l)
+        # print(l, float(Y.T @ Px @ Y))
+        print(l, precompute_mat['yt_Pi_y'][W_x_star.shape[1]], precompute_mat['logdet_H'], precompute_mat['logdet_Wt_W'],precompute_mat['logdet_Wt_H_inv_W'], precompute_mat['logdet_Wt_H_inv_W']-precompute_mat['logdet_Wt_W'])
+        #print(l, precompute_mat['yt_Pi_y'][W_x_star.shape[1]], precompute_mat['logdet_H'], precompute_mat['logdet_Wt_W'],precompute_mat['logdet_Wt_H_inv_W'], precompute_mat['logdet_Wt_H_inv_W']-precompute_mat['logdet_Wt_W'])
+        #print(l, precompute_mat['yt_Pi_y'][-1], precompute_mat['logdet_H'], precompute_mat['logdet_Wt_W'],precompute_mat['logdet_Wt_H_inv_W'], precompute_mat['logdet_Wt_H_inv_W']-precompute_mat['logdet_Wt_W'])
+        #print(l, precompute_mat['yt_Pi_y'], precompute_mat['logdet_H'], precompute_mat['logdet_Wt_W'],precompute_mat['logdet_Wt_H_inv_W'], precompute_mat['logdet_Wt_H_inv_W']-precompute_mat['logdet_Wt_W'])
 
     for pheno_name in pheno.columns:
         Y = pheno[pheno_name].values.reshape(-1,1).astype(np.float32)
@@ -422,10 +447,12 @@ for dataset in dataset_list:
         
 
         data_results, total_time = gemma_utils.run_gemma('gemma_run',
-                                                            pd.DataFrame(X, columns=snps['SNP'].values[sample]),
+                                                            #pd.DataFrame(X, columns=snps['SNP'].values[sample]),
+                                                            pd.DataFrame(X[:,0:1], columns=snps['SNP'].values[0:1]),
                                                             Y,
                                                             W,
                                                             K)
+        exit(0)
         
         print('GEMMA Run Time:', total_time, 's')
         print(data_results.head(10))

@@ -10,7 +10,8 @@ import qnorm
 
 from scipy import stats
 
-GEMMA="/net/fantasia/home/jiaqiang/shiquan_backup/Poisson_Mixed_Model/experiments/methods/LMM/gemma"
+GEMMA="/net/mulan/home/rlangefe/gemma_work/modified_gemma/GEMMA/bin/gemma"
+#GEMMA="/net/fantasia/home/jiaqiang/shiquan_backup/Poisson_Mixed_Model/experiments/methods/LMM/gemma"
 
 def run_gemma(gemma_dir, gene_df, pheno_arr, covar_matrix, relatedness_matrix):
     # Make output directory if it doesn't exist
@@ -29,7 +30,7 @@ def run_gemma(gemma_dir, gene_df, pheno_arr, covar_matrix, relatedness_matrix):
     os.chdir(gemma_dir)
 
     # Run GEMMA
-    GEMMA_COMMAND = f'{GEMMA} -gene genotypes.tsv -p phenotypes.tsv -c covariates.tsv -n 1 -k relatedness_matrix.tsv -lmm 1 -notsnp -o output'
+    GEMMA_COMMAND = f'{GEMMA} -gene genotypes.tsv -p phenotypes.tsv -c covariates.tsv -n 1 -k relatedness_matrix.tsv -notsnp -o output -lmm 1'
     start = time.time()
     os.system(GEMMA_COMMAND)
     end = time.time()
@@ -71,24 +72,36 @@ def write_gemma_data(gene_df,
 
 def write_relatedness(relatedness_matrix, output_dir):
     # Write to output file (as tsv)
+    # pd.DataFrame(relatedness_matrix).to_csv(os.path.join(output_dir, 'relatedness_matrix.tsv'), 
+    #                         sep='\t', 
+    #                         index=False, 
+    #                         header=False, float_format='%.15f')
     pd.DataFrame(relatedness_matrix).to_csv(os.path.join(output_dir, 'relatedness_matrix.tsv'), 
                             sep='\t', 
                             index=False, 
-                            header=False, float_format='%.15f')
+                            header=False)
 
 def write_covars(covar_matrix, output_dir):
     # Write to output file (as tsv)
+    # pd.DataFrame(covar_matrix).to_csv(os.path.join(output_dir, 'covariates.tsv'), 
+    #                         sep='\t', 
+    #                         index=False, 
+    #                         header=False, float_format='%.15f')
     pd.DataFrame(covar_matrix).to_csv(os.path.join(output_dir, 'covariates.tsv'), 
                             sep='\t', 
                             index=False, 
-                            header=False, float_format='%.15f')
+                            header=False)
 
 def write_phenos(pheno_arr, output_dir):
     # Write to output file (as tsv)
+    # pd.DataFrame(pheno_arr).to_csv(os.path.join(output_dir, 'phenotypes.tsv'), 
+    #                         sep='\t', 
+    #                         index=False, 
+    #                         header=False, float_format='%.15f')
     pd.DataFrame(pheno_arr).to_csv(os.path.join(output_dir, 'phenotypes.tsv'), 
                             sep='\t', 
                             index=False, 
-                            header=False, float_format='%.15f')
+                            header=False)
 
 def write_genos(gene_df, output_dir):
     # Define gene names
@@ -101,5 +114,6 @@ def write_genos(gene_df, output_dir):
     gene_df.columns = ['geneID'] + [f'sample{i}' for i in gene_df.columns[1:]]
 
     # Write to output file (as tsv)
-    gene_df.to_csv(os.path.join(output_dir, 'genotypes.tsv'), sep='\t', index=False, float_format='%f')
+    #gene_df.to_csv(os.path.join(output_dir, 'genotypes.tsv'), sep='\t', index=False, float_format='%.15f')
+    gene_df.to_csv(os.path.join(output_dir, 'genotypes.tsv'), sep='\t', index=False)
 
