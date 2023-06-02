@@ -78,6 +78,9 @@ if __name__ == '__main__':
     df = pd.read_csv(args.input, sep='\t')
     df_pygemma = pd.read_csv(os.path.join(args.output, 'pygemma_results.csv'))
 
+    # Set rs to geneID
+    df['geneID'] = df['rs']
+
     if len(df) > 0:
         # Make manhattan plot
         manhattan_plot(df, args.output)

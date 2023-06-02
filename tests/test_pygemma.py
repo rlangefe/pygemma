@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 import qnorm
 
-
 from pygemma import lmm, pygemma_model
 
 OUTPUT = "/net/mulan/home/rlangefe/gemma_work/pygemma/tests/output"
@@ -313,8 +312,8 @@ for dataset in dataset_list:
 
     pcs = pca.fit_transform(X)
 
-    sample = range(0,X.shape[1]) 
-    #sample = np.random.choice(range(0,X.shape[1]), size=1000, replace=False)
+    #sample = range(0,X.shape[1]) 
+    sample = np.random.choice(range(0,X.shape[1]), size=100, replace=False)
     X = X[:,sample]
     pheno_name = pheno.columns[0]
     Y = pheno[pheno_name].values.reshape(-1,1).astype(np.float32)
@@ -328,8 +327,8 @@ for dataset in dataset_list:
     n = Y.shape[0]
     #print(pcs.mean(axis=0), pcs.std(axis=0))
 
-    #W = np.c_[np.ones(shape=(n, 1)), pcs].astype(np.float32)
-    W = np.ones(shape=(n, 1)).astype(np.float32)
+    W = np.c_[np.ones(shape=(n, 1)), pcs].astype(np.float32)
+    #W = np.ones(shape=(n, 1)).astype(np.float32)
     
     #W = np.ones(shape=(n, 1)).astype(np.float32)
     step_size = 0.05
@@ -340,12 +339,12 @@ for dataset in dataset_list:
     eigenVals = eigenVals.astype(np.float32)
     U = U.astype(np.float32)
 
-    # Sort eigenvalues in descending order
-    sorted_indices = np.argsort(eigenVals)
-    eigenVals = eigenVals[sorted_indices]
+    # # Sort eigenvalues in descending order
+    # sorted_indices = np.argsort(eigenVals)
+    # eigenVals = eigenVals[sorted_indices]
 
-    # Reorder eigenvectors according to sorted eigenvalues
-    U = U[:, sorted_indices]
+    # # Reorder eigenvectors according to sorted eigenvalues
+    # U = U[:, sorted_indices]
 
     # l_star = 117489.7578125
     # Px = pygemma_model.compute_Pc(eigenVals, U, np.c_[W, x], l_star)
@@ -421,38 +420,44 @@ for dataset in dataset_list:
     plt.savefig(os.path.join(OUTPUT, "likelihood_derivative2.png"))
     plt.clf()
 
-    for l in [0.000010,
-                0.000100,
-                0.001000,
-                0.010000,
-                0.100000,
-                1.000000,
-                10.000000,
-                100.000000,
-                1000.000000,
-                10000.000000]:
-        precompute_mat = lmm.precompute_mat(l, eigenVals, W_x_star, Y_star)
-        # Px = pygemma_model.compute_Pc(eigenVals, U, np.c_[W,x.reshape(-1,1)], l)
-        # print(l, float(Y.T @ Px @ Y))
-        print(l, precompute_mat['yt_Pi_y'][W_x_star.shape[1]], precompute_mat['logdet_H'], precompute_mat['logdet_Wt_W'],precompute_mat['logdet_Wt_H_inv_W'], precompute_mat['logdet_Wt_H_inv_W']-precompute_mat['logdet_Wt_W'])
-        #print(l, precompute_mat['yt_Pi_y'][W_x_star.shape[1]], precompute_mat['logdet_H'], precompute_mat['logdet_Wt_W'],precompute_mat['logdet_Wt_H_inv_W'], precompute_mat['logdet_Wt_H_inv_W']-precompute_mat['logdet_Wt_W'])
-        #print(l, precompute_mat['yt_Pi_y'][-1], precompute_mat['logdet_H'], precompute_mat['logdet_Wt_W'],precompute_mat['logdet_Wt_H_inv_W'], precompute_mat['logdet_Wt_H_inv_W']-precompute_mat['logdet_Wt_W'])
-        #print(l, precompute_mat['yt_Pi_y'], precompute_mat['logdet_H'], precompute_mat['logdet_Wt_W'],precompute_mat['logdet_Wt_H_inv_W'], precompute_mat['logdet_Wt_H_inv_W']-precompute_mat['logdet_Wt_W'])
+    # for l in [0.000010,
+    #             0.000100,
+    #             0.001000,
+    #             0.010000,
+    #             0.100000,
+    #             1.000000,
+    #             10.000000,
+    #             100.000000,
+    #             1000.000000,
+    #             10000.000000]:
+    #     precompute_mat = lmm.precompute_mat(l, eigenVals, W_x_star, Y_star)
+    #     Px = pygemma_model.compute_Pc(eigenVals, U, np.c_[W,x.reshape(-1,1)], l)
+    #     print(l, float(Y.T @ Px @ Y))
+    #     print(l, precompute_mat['yt_Pi_y'][W_x_star.shape[1]], precompute_mat['logdet_H'], precompute_mat['logdet_Wt_H_inv_W']-precompute_mat['logdet_Wt_W'], lmm.likelihood_restricted_lambda_overload(l, n, W_x_star.shape[1], precompute_mat['yt_Pi_y'][W_x_star.shape[1]], precompute_mat['logdet_H'], precompute_mat['logdet_Wt_W'], precompute_mat['logdet_Wt_H_inv_W']),
+    #             np.log(np.linalg.det(W_x_star.T @ (1.0/(l*eigenVals + 1.0)[:,np.newaxis] * W_x_star)) / np.linalg.det(W_x_star.T @ W_x_star)))
+    #     #print(l, precompute_mat['wjt_Pi_wk'], precompute_mat['logdet_H'], precompute_mat['logdet_Wt_W'],precompute_mat['logdet_Wt_H_inv_W'], precompute_mat['logdet_Wt_H_inv_W']-precompute_mat['logdet_Wt_W'])
+    #     #print(l, precompute_mat['yt_Pi_y'][W_x_star.shape[1]], precompute_mat['logdet_H'], precompute_mat['logdet_Wt_W'],precompute_mat['logdet_Wt_H_inv_W'], precompute_mat['logdet_Wt_H_inv_W']-precompute_mat['logdet_Wt_W'])
+    #     #print(l, precompute_mat['yt_Pi_y'][-1], precompute_mat['logdet_H'], precompute_mat['logdet_Wt_W'],precompute_mat['logdet_Wt_H_inv_W'], precompute_mat['logdet_Wt_H_inv_W']-precompute_mat['logdet_Wt_W'])
+    #     #print(l, precompute_mat['yt_Pi_y'], precompute_mat['logdet_H'], precompute_mat['logdet_Wt_W'],precompute_mat['logdet_Wt_H_inv_W'], precompute_mat['logdet_Wt_H_inv_W']-precompute_mat['logdet_Wt_W'])
 
     for pheno_name in pheno.columns:
+        p_vals_dict = {'SNP' : snps['SNP'].values[sample]}
+
         Y = pheno[pheno_name].values.reshape(-1,1).astype(np.float32)
         Y = qnorm.quantile_normalize(Y, axis=1)
         Y = (Y-np.mean(Y))/np.std(Y)
         Y = Y.reshape(-1,1)
         
-
+        # Run GEMMA
+        print('Running GEMMA')
         data_results, total_time = gemma_utils.run_gemma('gemma_run',
-                                                            #pd.DataFrame(X, columns=snps['SNP'].values[sample]),
-                                                            pd.DataFrame(X[:,0:1], columns=snps['SNP'].values[0:1]),
+                                                            pd.DataFrame(X, columns=snps['SNP'].values[sample]),
+                                                            #pd.DataFrame(X[:,0:1], columns=snps['SNP'].values[0:1]),
                                                             Y,
                                                             W,
                                                             K)
-        exit(0)
+
+        p_vals_dict['gemma'] = data_results['p_wald'].values
         
         print('GEMMA Run Time:', total_time, 's')
         print(data_results.head(10))
@@ -491,13 +496,64 @@ for dataset in dataset_list:
         plt.tight_layout()
         plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_gemma_wald_manhatten.png"))
         plt.clf()
+
+        # Run EMMA
+        print('Running EMMA')
+        data_results, total_time = gemma_utils.run_emma('emma_run',
+                                                            pd.DataFrame(X, columns=snps['SNP'].values[sample]),
+                                                            #pd.DataFrame(X[:,0:1], columns=snps['SNP'].values[0:1]),
+                                                            Y,
+                                                            W,
+                                                            K)
+
+        p_vals_dict['emma'] = data_results['p_wald'].values
+        
+        print('EMMA Run Time:', total_time, 's')
+        print(data_results.head(10))
+        theoretical = np.linspace(1/len(data_results),1.0,len(data_results))
+        pvals = np.sort(data_results['p_wald'])
+        
+        plt.scatter(y=-np.log10(pvals+1/len(data_results)), x=-np.log10(theoretical))
+        plt.axline((0,0), slope=1, color='red')
+        plt.xlabel(r'Theoretical: $-\log_{10}(p)$')
+        plt.ylabel(r'Observed: $-\log_{10}(p)$')
+        plt.tight_layout()
+        plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_emma_wald_qq.png"))
+        plt.clf()
+
+        # Manhatten plot adapted from https://stackoverflow.com/a/66062857
+        results_df = pd.DataFrame(
+            {
+            'pos'  : snps['POS'].values[sample],
+            'pval' : -np.log10(data_results['p_wald']+1/len(data_results)),
+            'chr' : snps['CHR'].values[sample]
+            }
+        )
+
+        results_df = results_df.sort_values(['chr', 'pos'])
+        results_df.reset_index(inplace=True, drop=True)
+        results_df['i'] = results_df.index
+
+        alpha = -np.log10(0.05/len(pvals))
+        with sns.color_palette():
+            sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'])
+        plt.axline((0,alpha), slope=0, color='red')
+        chrom_df=results_df.groupby('chr')['i'].median()
+        plt.xlabel('chr') 
+        plt.xticks(chrom_df,chrom_df.index)
+        plt.ylabel(r'$-\log_{10}(p)$')
+        plt.tight_layout()
+        plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_emma_wald_manhatten.png"))
+        plt.clf()
         
         #data_results = lmm.pygemma(Y - H @ Y, X - H @ X, np.ones(shape=(n, 1)), K, snps=snps['SNP'].values[sample], verbose=1)
         nproc = 1 if os.environ.get('SLURM_CPUS_PER_TASK') is None else int(os.environ.get('SLURM_CPUS_PER_TASK'))
         print(f"Using {nproc} processors")
         #data_results = jax_pygemma.pygemma_jax(Y, X, W, K, snps=snps['SNP'].values[sample], verbose=1, nproc=nproc)
         data_results = lmm.pygemma(Y, X, W, K, snps=snps['SNP'].values[sample], verbose=1, nproc=nproc)
-        print(data_results.head(20))
+        print(data_results.head(10))
+
+        p_vals_dict['pygemma'] = data_results['p_wald'].values
 
         theoretical = np.linspace(1/len(data_results),1.0,len(data_results))
         pvals = np.sort(data_results['p_wald'])
@@ -590,7 +646,10 @@ for dataset in dataset_list:
 
         print(f'Lambda GC: {lambda_gc}')
         data_results['p_wald_gc'] = 1-stats.chi2.cdf(stats.chi2.ppf(1-data_results['p_wald'] , 1)/lambda_gc, df=1)
-        print(data_results.head(20))
+        print(data_results.head(10))
+
+        p_vals_dict['linear_model'] = data_results['p_wald'].values
+        p_vals_dict['linear_model_gc'] = data_results['p_wald_gc'].values
 
         theoretical = np.linspace(1/len(data_results),1.0,len(data_results))
         pvals = np.sort(data_results['p_wald'])
@@ -664,5 +723,53 @@ for dataset in dataset_list:
         plt.tight_layout()
         plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_wald_manhatten_fixed_gc.png"))
         plt.clf()
+
+        # Convert p_vals_dict to dataframe and save
+        p_vals_df = pd.DataFrame(p_vals_dict)
+
+        p_vals_df.to_csv(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_pvals.csv"), index=False)
+
+        # Grid of plots for methods
+        # For gemma, emma, and pygemma plot pairwise the p-values off diagonal
+        # Plot the QQ plot on the diagonal
+        
+        figure, axes = plt.subplots(nrows=3, ncols=3, figsize=(20,20))
+
+        for idx_1, method1 in enumerate(['gemma', 'emma', 'pygemma']):
+            for idx_2, method2 in enumerate(['gemma', 'emma', 'pygemma']):
+                if idx_1 == idx_2:
+                    # Plot QQ plot for method
+                    pvals = np.sort(p_vals_df[method1])
+                    theoretical = np.linspace(1/len(pvals),1.0,len(pvals))
+
+                    # Seaborn qq plot
+                    sns.scatterplot(x=-np.log10(pvals+1/len(p_vals_df)), y=-np.log10(theoretical), ax=axes[idx_1, idx_2])
+                    axes[idx_1, idx_2].axline((0,0), slope=1, color='red')
+                    axes[idx_1, idx_2].set_xlabel(r'Theoretical: $-\log_{10}(p)$')
+                    axes[idx_1, idx_2].set_ylabel(r'Observed: $-\log_{10}(p)$')
+                    
+                    # Set title
+                    axes[idx_1, idx_2].set_title(f"{method1} QQ Plot")
+                    
+                else:
+                    # Plot p-value scatter plot with seaborn
+                    #sns.scatterplot(x=-np.log10(np.maximum(p_vals_df[method1], 1e-25)), y=-np.log10(np.maximum(p_vals_df[method2], 1e-25)), ax=axes[idx_1, idx_2])
+                    sns.scatterplot(x=-np.log10(p_vals_df[method1]), y=-np.log10(p_vals_df[method2]), ax=axes[idx_1, idx_2])
+                    axes[idx_1, idx_2].set_xlabel(f"{method1}")
+                    axes[idx_1, idx_2].set_ylabel(f"{method2}")
+
+                    # Plot diagonal line
+                    axes[idx_1, idx_2].axline((0,0), slope=1, color='red')
+
+        plt.tight_layout()
+        plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_pval_comparison.png"))
+        figure.clf()
+        plt.close(figure)
+        plt.clf()
+
+        # Reset plotting
+        plt.rcParams.update(plt.rcParamsDefault)
+        sns.set_theme()
+
 
         

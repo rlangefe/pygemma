@@ -7,19 +7,21 @@
 #SBATCH --mem=30GB
 #SBATCH --output=logs/pygemma-%A-%a.o
 #SBATCH --error=logs/pygemma-%A-%a.e
-#SBATCH --array=1-30%30
+#SBATCH --array=1-300%30
 
 # Set config variables
 TOPDIR="/net/mulan/home/rlangefe/gemma_work/pygemma/experiments/1000G"
 GENODIR="/net/fantasia/home/borang/Robert/Gene_Expression"
 #OUTPUTDIR="/net/mulan/home/rlangefe/gemma_work/1000G_Output"
 #OUTPUTDIR="/net/mulan/home/rlangefe/gemma_work/1000G_Output_test_parallel"
-OUTPUTDIR="/net/mulan/home/rlangefe/gemma_work/1000G_Output_test_no_pcs_new"
+OUTPUTDIR="/net/mulan/home/rlangefe/gemma_work/1000G_Output"
 PYGEMMADIR="/net/mulan/home/rlangefe/gemma_work/pygemma"
-GEMMA="/net/fantasia/home/jiaqiang/shiquan_backup/Poisson_Mixed_Model/experiments/methods/LMM/gemma"
+GEMMA="/net/mulan/home/rlangefe/gemma_work/clean_gemma/GEMMA/bin/gemma"
+#GEMMA="/net/fantasia/home/jiaqiang/shiquan_backup/Poisson_Mixed_Model/experiments/methods/LMM/gemma"
 PCFILE="/net/fantasia/home/borang/Robert/Genotype/chr_all_pc.eigenvec"
 RELATEDNESSMATRIX="/net/fantasia/home/borang/Robert/Genotype/output/chr_all.sXX.txt"
 PYGEMMAFIXPHENO="${PYGEMMADIR}/experiments/1000G/fix_pheno.py"
+GEMMA_PREP="${PYGEMMADIR}/experiments/1000G/prep_gemma.py"
 PLOTGEMMA="${PYGEMMADIR}/experiments/1000G/plot_gemma.py"
 PLOTGEMMALINEAR="${PYGEMMADIR}/experiments/1000G/plot_gemma_linear.py"
 NPCS=5
@@ -60,7 +62,7 @@ do
     # Make output directory for phenotype
     mkdir -p "${OUTPUT}"
 
-    # # Run Fixed Effect Linear Regression
+    # Run Fixed Effect Linear Regression
     python "${LINREG_RUNSNP}" \
             -s "${GENODIR}/${GENOFILE}" \
             -p "${GENODIR}/${GENOFILE%_Geno.txt}_Gene.txt" \
@@ -69,7 +71,7 @@ do
             --pcfile=${PCFILE} \
             -o "${OUTPUT}"
 
-    # # Run pyGEMMA
+    # Run pyGEMMA
     python "${PYGEMMA_RUNSNP}" \
             -s "${GENODIR}/${GENOFILE}" \
             -p "${GENODIR}/${GENOFILE%_Geno.txt}_Gene.txt" \
@@ -83,38 +85,46 @@ do
     mkdir -p "${OUTPUT}/gemma_run"
     cd "${OUTPUT}/gemma_run"
 
-    python "${PYGEMMADIR}/experiments/1000G/fix_pcs.py" \
-                -i "${PCFILE}" \
-                -pcs ${NPCS} \
-                -o "${OUTPUT}/gemma_run/pcs.txt"
+    # python "${PYGEMMADIR}/experiments/1000G/fix_pcs.py" \
+    #             -i "${PCFILE}" \
+    #             -pcs ${NPCS} \
+    #             -o "${OUTPUT}/gemma_run/pcs.txt"
 
-    # Transpose genotypes
-    python "${PYGEMMADIR}/experiments/1000G/transpose.py" \
-            -i "${GENODIR}/${GENOFILE}" \
-            -o "${OUTPUT}/gemma_run/geno.tsv"
+    # # Transpose genotypes
+    # python "${PYGEMMADIR}/experiments/1000G/transpose.py" \
+    #         -i "${GENODIR}/${GENOFILE}" \
+    #         -o "${OUTPUT}/gemma_run/geno.tsv"
 
-    # Modify phenotype
-    python "${PYGEMMAFIXPHENO}" \
-                -i "${GENODIR}/${GENOFILE%_Geno.txt}_Gene.txt" \
-                -o "${OUTPUT}/gemma_run/pheno.tsv"
+    # # Modify phenotype
+    # python "${PYGEMMAFIXPHENO}" \
+    #             -i "${GENODIR}/${GENOFILE%_Geno.txt}_Gene.txt" \
+    #             -o "${OUTPUT}/gemma_run/pheno.tsv"
+
+    python "${GEMMA_PREP}" \
+            -s "${GENODIR}/${GENOFILE}" \
+            -p "${GENODIR}/${GENOFILE%_Geno.txt}_Gene.txt" \
+            -k "${RELATEDNESSMATRIX}" \
+            -pcs "${NPCS}" \
+            --pcfile=${PCFILE} \
+            -o "${OUTPUT}/gemma_run"
 
     # Start timer
     STARTTIME=$(date +%s)
     if [ "$NPCS" -eq 0 ]; then
         ${GEMMA} \
-            -gene "${OUTPUT}/gemma_run/geno.tsv" \
-            -p "${OUTPUT}/gemma_run/pheno.tsv" \
+            -g "${OUTPUT}/gemma_run/genotypes.tsv" \
+            -p "${OUTPUT}/gemma_run/phenotypes.tsv" \
             -n 1 \
-            -k "${RELATEDNESSMATRIX}" \
+            -k "${OUTPUT}/gemma_run/relatedness_matrix.tsv" \
             -notsnp \
             -lmm 1
     else
         ${GEMMA} \
-            -gene "${OUTPUT}/gemma_run/geno.tsv" \
-            -p "${OUTPUT}/gemma_run/pheno.tsv" \
-            -c "${OUTPUT}/gemma_run/pcs.txt" \
+            -g "${OUTPUT}/gemma_run/genotypes.tsv" \
+            -p "${OUTPUT}/gemma_run/phenotypes.tsv" \
+            -c "${OUTPUT}/gemma_run/covariates.tsv" \
             -n 1 \
-            -k "${RELATEDNESSMATRIX}" \
+            -k "${OUTPUT}/gemma_run/relatedness_matrix.tsv" \
             -notsnp \
             -lmm 1
     fi
@@ -140,35 +150,43 @@ do
     mkdir -p "${OUTPUT}/gemma_run"
     cd "${OUTPUT}/gemma_run"
 
-    python "${PYGEMMADIR}/experiments/1000G/fix_pcs.py" \
-                -i "${PCFILE}" \
-                -pcs ${NPCS} \
-                -o "${OUTPUT}/gemma_run/pcs.txt"
+    # python "${PYGEMMADIR}/experiments/1000G/fix_pcs.py" \
+    #             -i "${PCFILE}" \
+    #             -pcs ${NPCS} \
+    #             -o "${OUTPUT}/gemma_run/pcs.txt"
 
-    # Transpose genotypes
-    python "${PYGEMMADIR}/experiments/1000G/transpose.py" \
-            -i "${GENODIR}/${GENOFILE}" \
-            -o "${OUTPUT}/gemma_run/geno.tsv"
+    # # Transpose genotypes
+    # python "${PYGEMMADIR}/experiments/1000G/transpose.py" \
+    #         -i "${GENODIR}/${GENOFILE}" \
+    #         -o "${OUTPUT}/gemma_run/geno.tsv"
 
-    # Modify phenotype
-    python "${PYGEMMAFIXPHENO}" \
-                -i "${GENODIR}/${GENOFILE%_Geno.txt}_Gene.txt" \
-                -o "${OUTPUT}/gemma_run/pheno.tsv"
+    # # Modify phenotype
+    # python "${PYGEMMAFIXPHENO}" \
+    #             -i "${GENODIR}/${GENOFILE%_Geno.txt}_Gene.txt" \
+    #             -o "${OUTPUT}/gemma_run/pheno.tsv"
+
+    python "${GEMMA_PREP}" \
+            -s "${GENODIR}/${GENOFILE}" \
+            -p "${GENODIR}/${GENOFILE%_Geno.txt}_Gene.txt" \
+            -k "${RELATEDNESSMATRIX}" \
+            -pcs "${NPCS}" \
+            --pcfile=${PCFILE} \
+            -o "${OUTPUT}/gemma_run"
 
     # Start timer
     STARTTIME=$(date +%s)
     if [ "$NPCS" -eq 0 ]; then
         ${GEMMA} \
-            -gene "${OUTPUT}/gemma_run/geno.tsv" \
-            -p "${OUTPUT}/gemma_run/pheno.tsv" \
+            -g "${OUTPUT}/gemma_run/genotypes.tsv" \
+            -p "${OUTPUT}/gemma_run/phenotypes.tsv" \
             -n 1 \
             -notsnp \
             -lm
     else
         ${GEMMA} \
-            -gene "${OUTPUT}/gemma_run/geno.tsv" \
-            -p "${OUTPUT}/gemma_run/pheno.tsv" \
-            -c "${OUTPUT}/gemma_run/pcs.txt" \
+            -g "${OUTPUT}/gemma_run/genotypes.tsv" \
+            -p "${OUTPUT}/gemma_run/phenotypes.tsv" \
+            -c "${OUTPUT}/gemma_run/covariates.tsv" \
             -n 1 \
             -notsnp \
             -lm

@@ -101,7 +101,7 @@ cpdef calc_lambda_restricted(np.ndarray[np.float32_t, ndim=1] eigenVals,
                 lambda_min = optimize.brenth(f=wrapper_likelihood_derivative1_restricted_lambda, 
                                             a=lambda0,
                                             b=lambda1,
-                                            rtol=1e-5,#rtol=0.1,
+                                            rtol=0.1,
                                             maxiter=maxiter,
                                             args=(eigenVals, Y, W),
                                             disp=False)
@@ -372,6 +372,7 @@ cpdef precompute_mat(float lam,
     # W[:,c+1] is the phenotype vector
 
     cdef np.ndarray[np.float64_t, ndim=1] Hi_eval = 1.0 / (np.float64(lam)*eigenVals.astype(np.float64) + 1.0)
+    #print(lam, Hi_eval[:5])
 
     cdef np.ndarray[np.float64_t, ndim=3] wjt_Pi_wk = np.zeros((W_star.shape[1], 
                                                                 c+1, 
@@ -394,12 +395,18 @@ cpdef precompute_mat(float lam,
     #start = time.time()
     for i in range(c+1): # Loop for Pi
         if i == 0:
-            wjt_Pi_wk[:,i,:] = W_star.T @ (Hi_eval[:,np.newaxis] * W_star)
-            #wjt_Pi_wk[:,:,:] = (W_star.T @ (Hi_eval[:,np.newaxis] * W_star))[:,np.newaxis,:]
-        elif wjt_Pi_wk[i-1,i-1,i-1] > 0.0:
+            #wjt_Pi_wk[:,i,:] = (W_star.T @ (Hi_eval[:,np.newaxis] * W_star)).T
+            wjt_Pi_wk[:,:,:] = (W_star.T @ (Hi_eval[:,np.newaxis] * W_star))[:,np.newaxis,:]
+            # for j in range(W_star.shape[1]):
+            #     for k in range(W_star.shape[1]):
+            #         wjt_Pi_wk[j,i,k] = np.sum(W_star[:,k] * Hi_eval * W_star[:,j])
+        elif wjt_Pi_wk[i-1,i-1,i-1] != 0.0:
             #wjt_Pi_wk[:,i,:] = wjt_Pi_wk[:,i-1,:] - np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) / wjt_Pi_wk[i-1,i-1,i-1]
             wjt_Pi_wk[:,i,:] = wjt_Pi_wk[:,i-1,:] - np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) / wjt_Pi_wk[i-1,i-1,i-1]
             #wjt_Pi_wk[:,i:,:] -= (np.outer(wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]))[:,np.newaxis,:]
+            # for j in range(W_star.shape[1]):
+            #     for k in range(W_star.shape[1]):
+            #         wjt_Pi_wk[j,i,k] = wjt_Pi_wk[j,i-1,k] - (wjt_Pi_wk[j,i-1,i-1] * wjt_Pi_wk[i-1,i-1,k]) / wjt_Pi_wk[i-1,i-1,i-1]
         else:
             wjt_Pi_wk[:,i,:] = wjt_Pi_wk[:,i-1,:]
 
@@ -410,6 +417,7 @@ cpdef precompute_mat(float lam,
     #print(np.min(wjt_Pi_wk[indices,indices,indices]))
 
     logdet_Wt_H_inv_W = float(np.sum(np.log(wjt_Pi_wk[indices,indices,indices])))
+    #logdet_Wt_H_inv_W = float(np.linalg.slogdet(W.T @ (Hi_eval[:,np.newaxis] * W))[1])
 
 
     wjt_Pi_Pi_wk = np.zeros((W_star.shape[1], 
@@ -449,12 +457,13 @@ cpdef precompute_mat(float lam,
     if not full:
         #start = time.time()
         precompute_dict = {
-                        'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c].astype(np.float32),
+                        #'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c].astype(np.float32),
+                        'wjt_Pi_wk'                 : wjt_Pi_wk[:, :, :].astype(np.float32),
                         'wjt_Pi_Pi_wk'              : wjt_Pi_Pi_wk[:c, :, :c].astype(np.float32),
                         'yt_Pi_y'                   : wjt_Pi_wk[c, :, c].reshape(-1).astype(np.float32),
                         'yt_Pi_Pi_y'                : wjt_Pi_Pi_wk[c, :, c].reshape(-1).astype(np.float32),
                         'tr_Pi'                     : tr_Pi.astype(np.float32),
-                        'logdet_Wt_W'               : float(np.linalg.slogdet(W.T @ W)[1]),
+                        'logdet_Wt_W'               : 0.0, #float(np.linalg.slogdet(W.T @ W)[1]),
                         'logdet_Wt_H_inv_W'         : float(logdet_Wt_H_inv_W),
                         'logdet_H'                  : float(np.sum(np.log(lam*eigenVals + 1.0))),
                         }
@@ -502,8 +511,8 @@ cpdef precompute_mat(float lam,
 
         #start = time.time()
         precompute_dict = {
-                            'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c].astype(np.float32),
-                            'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c].astype(np.float32),
+                            #'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c].astype(np.float32),
+                            'wjt_Pi_wk'                 : wjt_Pi_wk[:, :, :].astype(np.float32),
                             'wjt_Pi_Pi_wk'              : wjt_Pi_Pi_wk[:c, :, :c].astype(np.float32),
                             'wjt_Pi_Pi_Pi_wk'           : wjt_Pi_Pi_Pi_wk[:c, :, :c].astype(np.float32),
                             'tr_Pi'                     : tr_Pi.astype(np.float32),
@@ -511,7 +520,7 @@ cpdef precompute_mat(float lam,
                             'yt_Pi_y'                   : wjt_Pi_wk[c, :, c].reshape(-1).astype(np.float32),
                             'yt_Pi_Pi_y'                : wjt_Pi_Pi_wk[c, :, c].reshape(-1).astype(np.float32),
                             'yt_Pi_Pi_Pi_y'             : wjt_Pi_Pi_Pi_wk[c, :, c].reshape(-1).astype(np.float32),
-                            'logdet_Wt_W'               : float(np.linalg.slogdet(W.T @ W)[1]),
+                            'logdet_Wt_W'               : 0.0, #float(np.linalg.slogdet(W.T @ W)[1]),
                             'logdet_Wt_H_inv_W'         : float(logdet_Wt_H_inv_W),
                             'logdet_H'                  : float(np.sum(np.log(lam*eigenVals + 1.0))),
                             }
@@ -587,7 +596,7 @@ cpdef float newton(float lam,
                    float lambda_max=1e5):
 
     cdef float lambda_root = lam
-    cdef int iter = 0
+    cdef int iteration = 0
     cdef float r_eps = 0.0
     cdef float lambda_new, ratio, d1, d2
 
@@ -640,10 +649,10 @@ cpdef float newton(float lam,
 
         lambda_root = lambda_new
 
-        if r_eps < 1e-5 or iter > 100:
+        if r_eps < 1e-5 or iteration > 100:
             break
 
-        iter += 1
+        iteration += 1
 
     return lambda_root
 
@@ -716,6 +725,7 @@ cpdef calc_beta_vg_ve(np.ndarray[np.float32_t, ndim=1] eigenVals,
 
     return beta, beta_vec, None, tau
 
+# Might overload this too
 @cython.boundscheck(False) # turn off bounds-checking for entire function
 @cython.wraparound(False)  # turn off negative index wrapping for entire function
 @cython.cdivision(True)
@@ -734,7 +744,7 @@ cpdef calc_beta_vg_ve_restricted(np.ndarray[np.float32_t, ndim=1] eigenVals,
 
     cdef np.ndarray[np.float32_t, ndim=2] W_x_t_H_inv = ((1.0/mod_eig)[:,np.newaxis] * W_x).T
     
-    cdef np.ndarray[np.float32_t, ndim=2] beta_vec = np.linalg.inv(W_x_t_H_inv @ W_x) @ (W_x_t_H_inv @ Y)
+    #cdef np.ndarray[np.float32_t, ndim=2] beta_vec = np.linalg.inv(W_x_t_H_inv @ W_x) @ (W_x_t_H_inv @ Y)
     
     #cdef np.float32_t beta = beta_vec[c,0] #compute_at_Pi_b(lam, c, mod_eig, W, x, Y) / max(compute_at_Pi_b(lam, c, mod_eig, W, x, x), MIN_VAL) # Double check this property holds, but I think it does bc positive symmetric
     cdef np.float32_t beta = compute_at_Pi_b(lam, c, mod_eig, W, x, Y) / max(compute_at_Pi_b(lam, c, mod_eig, W, x, x), MIN_VAL) # Double check this property holds, but I think it does bc positive symmetric
@@ -745,7 +755,8 @@ cpdef calc_beta_vg_ve_restricted(np.ndarray[np.float32_t, ndim=1] eigenVals,
 
     cdef np.float32_t tau = (n-c-1)/ytPxy
 
-    return np.float32(beta), beta_vec, np.float32(se_beta), np.float32(tau)
+    #return np.float32(beta), beta_vec, np.float32(se_beta), np.float32(tau)
+    return np.float32(beta), 0.0, np.float32(se_beta), np.float32(tau)
 
 @cython.boundscheck(False) # turn off bounds-checking for entire function
 @cython.wraparound(False)  # turn off negative index wrapping for entire function
@@ -765,9 +776,9 @@ cpdef calc_beta_vg_ve_restricted_overload(np.ndarray[np.float32_t, ndim=1] eigen
     
     cdef np.ndarray[np.float32_t, ndim=1] mod_eig = lam*eigenVals + 1.0
 
-    cdef np.ndarray[np.float32_t, ndim=2] W_x_t_H_inv = ((1.0/mod_eig)[:,np.newaxis] * W_x).T
+    #cdef np.ndarray[np.float32_t, ndim=2] W_x_t_H_inv = ((1.0/mod_eig)[:,np.newaxis] * W_x).T
     
-    cdef np.ndarray[np.float32_t, ndim=2] beta_vec = np.linalg.inv(W_x_t_H_inv @ W_x) @ (W_x_t_H_inv @ Y)
+    #cdef np.ndarray[np.float32_t, ndim=2] beta_vec = np.linalg.inv(W_x_t_H_inv @ W_x) @ (W_x_t_H_inv @ Y)
     
     #cdef np.float32_t beta = beta_vec[c,0] #compute_at_Pi_b(lam, c, mod_eig, W, x, Y) / max(compute_at_Pi_b(lam, c, mod_eig, W, x, x), MIN_VAL) # Double check this property holds, but I think it does bc positive symmetric
     cdef np.float32_t beta = precompute_dict['wjt_Pi_wk'][c,c,c+1] / precompute_dict['wjt_Pi_wk'][c,c,c]
@@ -779,7 +790,8 @@ cpdef calc_beta_vg_ve_restricted_overload(np.ndarray[np.float32_t, ndim=1] eigen
 
     cdef np.float32_t tau = (n-c-1)/ytPxy
 
-    return np.float32(beta), beta_vec, np.float32(se_beta), np.float32(tau)
+    return np.float32(beta), 0.0, np.float32(se_beta), np.float32(tau)
+    #return np.float32(beta), beta_vec, np.float32(se_beta), np.float32(tau)
 
 @cython.boundscheck(False) # turn off bounds-checking for entire function
 @cython.wraparound(False)  # turn off negative index wrapping for entire function
