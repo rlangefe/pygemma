@@ -10,6 +10,8 @@ except ModuleNotFoundError:
 import multiprocessing
 from scipy import optimize, stats
 
+from scipy.linalg import eigh
+
 import time
 
 def calc_lambda(eigenVals, Y, W):
@@ -23,9 +25,22 @@ def calc_lambda(eigenVals, Y, W):
 
     roots = [np.power(10.0, lambda_pow_low), np.power(10.0, lambda_pow_high)]
     
-    for lambda0, lambda1 in lambda_possible:
-    
-        likelihood_lambda0 = likelihood_derivative1_lambda(lambda0, eigenVals, Y, W)
+    lambda_possible = np.arange(lambda_pow_low,lambda_pow_high,step, dtype=np.float32)
+
+    for idx in range(lambda_possible.shape[0]):
+        lambda_idx = lambda_possible[idx]
+
+        lambda0 = 10.0 ** (lambda_idx)
+        lambda1 = 10.0 ** (lambda_idx + step)
+
+        # If it's the first iteration
+        if idx == 0:
+            # Compute lower lambda
+            likelihood_lambda0 = likelihood_derivative1_lambda(lambda0, eigenVals, Y, W)
+        else:
+            # Reuse lambda likelihood from previous iteration
+            likelihood_lambda0 = likelihood_lambda1
+
         likelihood_lambda1 = likelihood_derivative1_lambda(lambda1, eigenVals, Y, W)
 
         if np.sign(likelihood_lambda0) * np.sign(likelihood_lambda1) < 0:
@@ -52,19 +67,28 @@ def calc_lambda(eigenVals, Y, W):
     return roots[np.argmax(likelihood_list)]
 
 
-def pygemma(Y, X, W, K, snps=None, verbose=0, nproc=1):
+def pygemma(Y, X, W, K, Z=None, snps=None, verbose=0, disable_checks=True, nproc=1):
     if True: # Fix compatability issues with Python<=3.6.9 later (issue with rich package)
         console = Console()
     else:
         verbose = 0
 
-    Y = Y.astype(np.float32).reshape(-1,1)
-    W = W.astype(np.float32)
-    X = X.astype(np.float32)
+    if Y.dtype != np.float32:
+        Y = Y.astype(np.float32).reshape(-1,1)
+    
+    if W.dtype != np.float32:
+        W = W.astype(np.float32)
+    
+    if X.dtype != np.float32:
+        X = X.astype(np.float32)
 
-    Y = (Y - np.mean(Y, axis=0)) / np.std(Y, axis=0)
-    #K = ((K - np.mean(K, axis=0)) / np.std(K, axis=0)).astype(np.float32)
-    #K = (K - K.mean(axis=1)[:, None]) / K.std(axis=1)[:, None]
+    if Z is not None:
+        K = (Z @ K @ Z.T)
+    
+    if K.dtype != np.float32:
+        K = K.astype(np.float32)
+
+    #Y = (Y - np.mean(Y, axis=0)) / np.std(Y, axis=0)
 
     results_dict = {
                         'beta'       : [],
@@ -80,27 +104,26 @@ def pygemma(Y, X, W, K, snps=None, verbose=0, nproc=1):
     if verbose > 0:
         with console.status(f"[bold green]Running null model...") as status:
 
+            console.log(f"Starting eigendecomposition...")
             start = time.time()
-            eigenVals, U = np.linalg.eig(K) # Perform eigendecomposition
-            eigenVals = eigenVals.astype(np.float32)
-            U = U.astype(np.float32)
+            # TODO: Add symmetric eigenvalue decomposition function (faster and better)
+            #eigenVals, U = np.linalg.eig(K) # Perform eigendecomposition
+            eigenVals, U = eigh(K) # Perform eigendecomposition
+            
+            if U.dtype != np.float32:
+                U = U.astype(np.float32)
 
-            eigenVals = np.maximum(0, eigenVals)
+            eigenVals = np.maximum(0.0, eigenVals)
+
+            if eigenVals.dtype != np.float32:
+                eigenVals = eigenVals.astype(np.float32)
 
             assert (eigenVals >= 0).all()
             console.log(f"[green]Eigendecomposition computed - {round(time.time() - start,3)} s")
 
-            start = time.time()
-            X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
-            console.log(f"[green]Genotype matrix centered - {round(time.time() - start,3)} s")
-
-            start = time.time()
-            for col in range(W.shape[1]):
-                if W[:,col].std() > 0:
-                    W[:,col] = (W[:,col] - W[:,col].mean()) / W[:,col].std()
-            console.log(f"[green]Covariate matrix centered - {round(time.time() - start,3)} s")
-
-            console.log(f"[green]Running {X.shape[1]} SNPs with {Y.shape[0]} individuals...")
+            #start = time.time()
+            #X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
+            #console.log(f"[green]Genotype matrix centered - {round(time.time() - start,3)} s")
 
             # Calculate under null
             n, c = W.shape
@@ -121,19 +144,22 @@ def pygemma(Y, X, W, K, snps=None, verbose=0, nproc=1):
             # l_null = likelihood(lambda_null, tau_null, beta_vec_null, eigenVals, U @ Y, U @ W)
             # console.log(f"[green]Null likelihood computed: {round(l_null, 5)} - {round(time.time() - start,3)} s")
     else:
-        eigenVals, U = np.linalg.eig(K) # Perform eigendecomposition
-        eigenVals = eigenVals.astype(np.float32)
-        U = U.astype(np.float32)
+        #eigenVals, U = np.linalg.eig(K) # Perform eigendecomposition
+        # TODO: Add symmetric eigenvalue decomposition function (faster and better)
+        #eigenVals, U = np.linalg.eig(K) # Perform eigendecomposition
+        eigenVals, U = eigh(K) # Perform eigendecomposition
 
-        eigenVals = np.maximum(0, eigenVals)
+        if U.dtype != np.float32:
+            U = U.astype(np.float32)
+
+        eigenVals = np.maximum(0.0, eigenVals)
+
+        if eigenVals.dtype != np.float32:
+            eigenVals = eigenVals.astype(np.float32)
 
         assert (eigenVals >= 0).all()
 
-        X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
-
-        for col in range(W.shape[1]):
-            if W[:,col].std() > 0:
-                W[:,col] = (W[:,col] - W[:,col].mean()) / W[:,col].std()
+        #X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
 
         # Calculate under null
         n, c = W.shape
@@ -159,10 +185,29 @@ def pygemma(Y, X, W, K, snps=None, verbose=0, nproc=1):
         #               U @ Y))
 
         # l_null = likelihood(lambda_null, tau_null, beta_vec_null, eigenVals, Y, W)
+    if verbose > 0:
+        start = time.time()
 
-    X = U @ X
-    Y = U @ Y
-    W = U @ W
+    # Might be able to speed this up by stacking all three and multiplying by U.T once
+    X = U.T @ X
+    Y = U.T @ Y
+    W = U.T @ W
+    # X = np.dot(U.T, X)
+    # Y = np.dot(U.T, Y)
+    # W = np.dot(U.T, W)
+
+    # Not sure how much time the value error takes, but I'm disabling it with a flag
+
+    if not disable_checks:
+        # Raise error if any NaNs are present
+        if np.isnan(X).any() or np.isnan(Y).any() or np.isnan(W).any():
+            raise ValueError("NaNs present in data")
+
+    if verbose > 0:
+        console.log(f"[green]Left multiplied by U.T - {round(time.time() - start,3)} s")
+
+    if verbose > 0:
+        console.log(f"[green]Running {X.shape[1]} SNPs with {Y.shape[0]} individuals...")
 
     if verbose > 0:
         #progress_bar = track(range(X.shape[1]), description='Testing SNPs...') #Uncomment later for good visualization and timing
@@ -284,8 +329,9 @@ def calculate(t):
     eigenVals, Y, W, X = t
     try:
         lambda_restricted = calc_lambda_restricted(eigenVals, Y, np.c_[W, X])
-        beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted(eigenVals, W, X.reshape(-1,1), lambda_restricted, Y)
-        F_wald = np.power(beta/se_beta, 2.0)
+        #beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted(eigenVals, W, X.reshape(-1,1), lambda_restricted, Y)
+        beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted_overload(eigenVals, W, X.reshape(-1,1), lambda_restricted, Y)
+        F_wald = (beta/se_beta) ** 2.0
 
         n = Y.shape[0]
         c = W.shape[1]
@@ -299,6 +345,7 @@ def calculate(t):
             'p_wald': 1-stats.f.cdf(x=F_wald, dfn=1, dfd=n-c-1),
         }
     except np.linalg.LinAlgError as e:
+        print(e)
         return {
             'beta': np.nan,
             'se_beta': np.nan,

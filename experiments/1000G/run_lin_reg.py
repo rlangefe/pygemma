@@ -42,9 +42,9 @@ def run_gwas(Y,W,X, snps=None, verbose=0):
 
     X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
 
-    for col in range(W.shape[1]):
-        if W[:,col].std() > 0:
-            W[:,col] = (W[:,col] - W[:,col].mean()) / W[:,col].std()
+    # for col in range(W.shape[1]):
+    #     if W[:,col].std() > 0:
+    #         W[:,col] = (W[:,col] - W[:,col].mean()) / W[:,col].std()
 
     covar_list = [f'Covar{i}' for i in range(W.shape[1])]
     
@@ -105,7 +105,7 @@ if __name__ == '__main__':
     snp_df = pd.read_csv(args.snps)
     X = snp_df.values
     snps = snp_df.columns
-    X = (X - X.mean(axis=0)) #/ X.std(axis=0)
+    X = (X - X.mean(axis=0)) / X.std(axis=0)
     p = X.shape[1]
     del snp_df
 
@@ -114,7 +114,7 @@ if __name__ == '__main__':
     phenotype_df = pd.read_csv(args.phenotype)
     Y = phenotype_df['Exp_Value'].values.reshape(-1,1)
     Y = qnorm.quantile_normalize(Y, axis=1)
-    #Y = Y - Y.mean()
+    Y = (Y - Y.mean(axis=0)) / Y.std(axis=0)
     del phenotype_df
 
     W = np.ones(shape=(X.shape[0], 1))

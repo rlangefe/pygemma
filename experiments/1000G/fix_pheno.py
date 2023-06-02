@@ -20,6 +20,7 @@ if __name__ == '__main__':
     Y = df['Exp_Value'].values.reshape(-1,1)
     #Y = Y - Y.mean()
     Y = qnorm.quantile_normalize(Y, axis=1)
+    Y = (Y - Y.mean()) / Y.std()
 
     # Write to output file (as tsv)
     pd.DataFrame(Y).to_csv(args.output, 

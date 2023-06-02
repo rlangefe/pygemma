@@ -78,6 +78,9 @@ if __name__ == '__main__':
     df = pd.read_csv(args.input, sep='\t')
     df_pygemma = pd.read_csv(os.path.join(args.output, 'pygemma_results.csv'))
 
+    # Set rs to geneID
+    df['geneID'] = df['rs']
+
     if len(df) > 0:
         # Make manhattan plot
         manhattan_plot(df, args.output)
@@ -129,4 +132,13 @@ if __name__ == '__main__':
         plt.title(f'PyGEMMA vs. GEMMA - {os.path.basename(args.output)}')
         plt.tight_layout()
         plt.savefig(os.path.join(args.output, "pygemma_vs_gemma_beta.png"))
+        plt.clf()
+
+        # Scatterplot of lambda values
+        sns.scatterplot(x=-np.log10(df_pygemma['lambda']), y=-np.log10(df['l_remle']))
+        plt.xlabel(r'PyGEMMA: $-\log_{10}(\lambda$)')
+        plt.ylabel(r'GEMMA: $-\log_{10}(\lambda)$')
+        plt.title(f'PyGEMMA vs. GEMMA - {os.path.basename(args.output)}')
+        plt.tight_layout()
+        plt.savefig(os.path.join(args.output, "pygemma_vs_gemma_lambda.png"))
         plt.clf()
