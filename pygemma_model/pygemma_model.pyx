@@ -1306,6 +1306,12 @@ cpdef precompute_mat(float lam,
     cdef int c = W.shape[1]
 
     #cdef np.ndarray[np.float64_t, ndim=2] W_star = np.c_[W, Y].astype(np.float64)
+    
+    # I think this line is the expensive part
+    # index_tricks.py:323(__getitem__) is cited as taking 25% of the time
+    # Might be that continuing to concatenate is a problem
+    # Should change function to accept W_star as arg instead
+    # https://github.com/numpy/numpy/blob/2e8994d3d1c1edfd94cbbeb18771a3ea789a2eb3/numpy/lib/index_tricks.py#L310
     cdef np.ndarray[np.float64_t, ndim=2] W_star = np.asfortranarray(np.c_[W, Y], dtype=np.float64)
     
     # Note: W is now a matrix of shape (n, c+1), where n is the number of samples and c is the number of covariates
