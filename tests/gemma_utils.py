@@ -11,8 +11,8 @@ import qnorm
 from scipy import stats
 
 #GEMMA="/net/mulan/home/rlangefe/gemma_work/modified_gemma/GEMMA/bin/gemma"
-#GEMMA="/net/fantasia/home/jiaqiang/shiquan_backup/Poisson_Mixed_Model/experiments/methods/LMM/gemma"
-GEMMA="/net/mulan/home/rlangefe/gemma_work/clean_gemma/GEMMA/bin/gemma"
+GEMMA="/net/fantasia/home/jiaqiang/shiquan_backup/Poisson_Mixed_Model/experiments/methods/LMM/gemma"
+#GEMMA="/net/mulan/home/rlangefe/gemma_work/clean_gemma/GEMMA/bin/gemma"
 
 def run_gemma(gemma_dir, gene_df, pheno_arr, covar_matrix, relatedness_matrix):
     # Make output directory if it doesn't exist
@@ -22,6 +22,9 @@ def run_gemma(gemma_dir, gene_df, pheno_arr, covar_matrix, relatedness_matrix):
     # Write data files
     print('Writing data files')
     write_gemma_data(gene_df, pheno_arr, covar_matrix, relatedness_matrix, gemma_dir)
+
+    if not os.path.exists(gemma_dir):
+        os.makedirs(gemma_dir)
 
     # Make GEMMA output dir
     if not os.path.exists(os.path.join(gemma_dir, 'output')):
@@ -87,7 +90,14 @@ def run_emma(emma_dir, gene_df, pheno_arr, covar_matrix, relatedness_matrix):
     
     #output = data.frame(emma.REML.t(pheno, geno, kinship, X0=covar, esp=1e-20))
 
-    n.cores <- parallelly::availableCores()
+    # Check if tasks per node set
+    # n.cores = 1 if not set
+    # else n.cores = tasks per node
+    if (Sys.getenv("SLURM_TASKS_PER_NODE") == "") {
+        n.cores <- 1
+    } else {
+        n.cores <- as.numeric(Sys.getenv("SLURM_TASKS_PER_NODE"))
+
     my.cluster <- parallel::makeCluster(
     max(n.cores-1, 1), 
     type = "PSOCK"
