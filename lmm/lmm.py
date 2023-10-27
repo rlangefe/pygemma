@@ -433,7 +433,7 @@ def calculate(t):
                 'tau': tau,
                 'lambda': lambda_restricted,
                 'F_wald': F_wald,
-                'p_wald': 1-stats.f.cdf(x=F_wald, dfn=1, dfd=n-c-1),
+                'p_wald': stats.f.sf(x=F_wald, dfn=1, dfd=n-c-1),
             })
         except np.linalg.LinAlgError as e:
             print(e)
@@ -470,7 +470,7 @@ def calculate_de(t):
                 'tau': tau,
                 'lambda': lambda_restricted,
                 'F_wald': F_wald,
-                'p_wald': 1-stats.f.cdf(x=F_wald, dfn=1, dfd=n-c-1),
+                'p_wald': stats.f.sf(x=F_wald, dfn=1, dfd=n-c-1),
             })
         except np.linalg.LinAlgError as e:
             print(e)
