@@ -3,9 +3,12 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+plt.rcParams['text.latex.preamble']=r"\usepackage{amsmath}"
+
 import numpy as np
 
-BENCHMARK_DIR="/net/mulan/home/rlangefe/gemma_work/pygemma/tests/benchmark_test"
+#BENCHMARK_DIR="/net/mulan/home/rlangefe/gemma_work/pygemma/tests/benchmark_test_32"
+BENCHMARK_DIR="/net/mulan/home/rlangefe/gemma_work/pygemma/tests/benchmark_test_1"
 
 if __name__ == '__main__':
     # For each directory in the benchmark directory, read in results.csv
@@ -63,8 +66,8 @@ if __name__ == '__main__':
     # Scatter plot of pyGEMMA vs GEMMA
     sns.set_style("whitegrid")
     sns.scatterplot(x='GEMMA', y='pyGEMMA', hue='num_snps', data=results)
-    plt.xlabel('GEMMA')
-    plt.ylabel('pyGEMMA')
+    plt.xlabel('GEMMA (s)')
+    plt.ylabel('pyGEMMA (s)')
 
     # Line on 45 degree angle
     plt.axline((0, 0), slope=1, color='black', linestyle='--')
@@ -84,7 +87,7 @@ if __name__ == '__main__':
         sns.set_style("whitegrid")
         sns.lineplot(x=variable, y=speedup, data=results)
         plt.xlabel(var_name)
-        plt.ylabel('Speedup')
+        plt.ylabel(r'Speedup $\left( \frac{GEMMA Time}{pyGEMMA Time} \right)$')
         plt.title('pyGEMMA Speedup Over GEMMA by {}'.format(var_name))
         plt.tight_layout()
         plt.savefig(os.path.join(BENCHMARK_DIR, 'speedup_{}.png'.format(variable)))

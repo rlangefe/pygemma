@@ -30,6 +30,47 @@ sns.set_theme()
 
 console = Console()
 
+import matplotlib.animation as animation
+
+# Function to make a gwas GIF using matplotlib that fills in incrementally
+def make_animated_gwas(results_df, path):
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.set_xlabel("Chromosome")
+    ax.set_ylabel("-log10(p-value)")
+    ax.set_title("Manhattan Plot for GWAS")
+
+    results_df = results_df.sort_values(['chr', 'pos'])
+    results_df.reset_index(inplace=True, drop=True)
+    results_df['i'] = results_df.index
+
+    alpha = -np.log10(0.05/len(pvals))
+    with sns.color_palette():
+        sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'], linewidth=0)
+    plt.axline((0,alpha), slope=0, color='red')
+    chrom_df=results_df.groupby('chr')['i'].median()
+    plt.xlabel('chr') 
+    plt.xticks(chrom_df,chrom_df.index)
+    plt.ylabel(r'$-\log_{10}(p)$')
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_wald_manhatten.png"))
+    plt.clf()
+
+    # Break snps into 50 approximately equal sized groups and assign it an index
+    groups = np.array_split(results_df[['i','']], 50)
+
+    def update(frame):
+        # Simulate data points (replace this with your actual data)
+        num_points = 100
+        x = np.random.randint(1, 23, size=num_points)
+        y = -np.log10(np.random.rand(num_points) * 0.001)
+        
+        ax.scatter(x, y, c='blue', s=10, alpha=0.5)
+        ax.set_xlim(0, 23)
+        ax.set_ylim(0, max(y) + 1)
+
+
+
+
 def run_gwas(Y,W,X, snps=None, verbose=0):
     if verbose > 0:
         progress = track(range(X.shape[1]), description='Running GWAS...')
@@ -227,6 +268,8 @@ with console.status("[bold green]Running pyGEMMA Function Run Tests...") as stat
                                 (lmm.precompute_mat_flipped, [lam, eigenVals, np.c_[W, x], Y]),
                                 (lmm.precompute_mat_modified, [lam, eigenVals, np.c_[W, x], Y, False]),
                                 (lmm.precompute_mat_modified, [lam, eigenVals, np.c_[W, x], Y]),
+                                (lmm.precompute_mat_concat, [lam, eigenVals, np.asfortranarray(np.c_[W, x, Y]), False]),
+                                (lmm.precompute_mat_concat, [lam, eigenVals, np.asfortranarray(np.c_[W, x, Y])]),
                                 (lmm.calc_beta_vg_ve_restricted, [eigenVals, W, x.reshape(-1,1), lam, Y]),
                                 (lmm.calc_beta_vg_ve_restricted_overload, [eigenVals, W, x.reshape(-1,1), lam, Y]),
                                 (lmm.likelihood_lambda, [lam, eigenVals, Y, W]),
@@ -357,12 +400,12 @@ for dataset in dataset_list:
     #K = ((K - np.mean(K, axis=0)) / np.std(K, axis=0)).astype(np.float32)
 
     print('Running PCA...')
-    pca = PCA(n_components=2)
+    pca = PCA(n_components=5)
 
     pcs = pca.fit_transform(X)
 
-    #sample = range(0,X.shape[1]) 
-    sample = np.random.choice(range(0,X.shape[1]), size=1000, replace=False)
+    sample = range(0,X.shape[1]) 
+    #sample = np.random.choice(range(0,X.shape[1]), size=1000, replace=False)
     X = X[:,sample]
     pheno_name = pheno.columns[0]
     Y = pheno[pheno_name].values.reshape(-1,1).astype(np.float32)
@@ -511,10 +554,10 @@ for dataset in dataset_list:
         
         print('GEMMA Run Time:', total_time, 's')
         print(data_results.head(10))
-        theoretical = np.linspace(1/len(data_results),1.0,len(data_results))
+        theoretical = np.linspace((1/len(data_results)) + (1e-300),1.0,len(data_results))
         pvals = np.sort(data_results['p_wald'])
         
-        plt.scatter(y=-np.log10(pvals+1/len(data_results)), x=-np.log10(theoretical))
+        plt.scatter(y=-np.log10(pvals+1e-300), x=-np.log10(theoretical))
         plt.axline((0,0), slope=1, color='red')
         plt.xlabel(r'Theoretical: $-\log_{10}(p)$')
         plt.ylabel(r'Observed: $-\log_{10}(p)$')
@@ -526,7 +569,7 @@ for dataset in dataset_list:
         results_df = pd.DataFrame(
             {
             'pos'  : snps['POS'].values[sample],
-            'pval' : -np.log10(data_results['p_wald']+1/len(data_results)),
+            'pval' : -np.log10(data_results['p_wald']+1e-300),
             'chr' : snps['CHR'].values[sample]
             }
         )
@@ -537,7 +580,7 @@ for dataset in dataset_list:
 
         alpha = -np.log10(0.05/len(pvals))
         with sns.color_palette():
-            sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'])
+            sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'], linewidth=0)
         plt.axline((0,alpha), slope=0, color='red')
         chrom_df=results_df.groupby('chr')['i'].median()
         plt.xlabel('chr') 
@@ -560,10 +603,10 @@ for dataset in dataset_list:
         
         # print('EMMA Run Time:', total_time, 's')
         # print(data_results.head(10))
-        # theoretical = np.linspace(1/len(data_results),1.0,len(data_results))
+        # theoretical = np.linspace((1/len(data_results)) + (1e-300),1.0,len(data_results))
         # pvals = np.sort(data_results['p_wald'])
         
-        # plt.scatter(y=-np.log10(pvals+1/len(data_results)), x=-np.log10(theoretical))
+        # plt.scatter(y=-np.log10(pvals+1e-300), x=-np.log10(theoretical))
         # plt.axline((0,0), slope=1, color='red')
         # plt.xlabel(r'Theoretical: $-\log_{10}(p)$')
         # plt.ylabel(r'Observed: $-\log_{10}(p)$')
@@ -575,7 +618,7 @@ for dataset in dataset_list:
         # results_df = pd.DataFrame(
         #     {
         #     'pos'  : snps['POS'].values[sample],
-        #     'pval' : -np.log10(data_results['p_wald']+1/len(data_results)),
+        #     'pval' : -np.log10(data_results['p_wald']+1e-300),
         #     'chr' : snps['CHR'].values[sample]
         #     }
         # )
@@ -586,7 +629,7 @@ for dataset in dataset_list:
 
         # alpha = -np.log10(0.05/len(pvals))
         # with sns.color_palette():
-        #     sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'])
+        #     sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'], linewidth=0)
         # plt.axline((0,alpha), slope=0, color='red')
         # chrom_df=results_df.groupby('chr')['i'].median()
         # plt.xlabel('chr') 
@@ -607,10 +650,10 @@ for dataset in dataset_list:
 
         p_vals_dict['pygemma'] = data_results['p_wald'].values
 
-        theoretical = np.linspace(1/len(data_results),1.0,len(data_results))
+        theoretical = np.linspace((1/len(data_results)) + (1e-300),1.0,len(data_results))
         pvals = np.sort(data_results['p_wald'])
         
-        plt.scatter(y=-np.log10(pvals+1/len(data_results)), x=-np.log10(theoretical))
+        plt.scatter(y=-np.log10(pvals+1e-300), x=-np.log10(theoretical))
         plt.axline((0,0), slope=1, color='red')
         plt.xlabel(r'Theoretical: $-\log_{10}(p)$')
         plt.ylabel(r'Observed: $-\log_{10}(p)$')
@@ -622,7 +665,7 @@ for dataset in dataset_list:
         results_df = pd.DataFrame(
             {
             'pos'  : snps['POS'].values[sample],
-            'pval' : -np.log10(data_results['p_wald']+1/len(data_results)),
+            'pval' : -np.log10(data_results['p_wald']+1e-300),
             'chr' : snps['CHR'].values[sample]
             }
         )
@@ -633,7 +676,7 @@ for dataset in dataset_list:
 
         alpha = -np.log10(0.05/len(pvals))
         with sns.color_palette():
-            sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'])
+            sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'], linewidth=0)
         plt.axline((0,alpha), slope=0, color='red')
         chrom_df=results_df.groupby('chr')['i'].median()
         plt.xlabel('chr') 
@@ -649,7 +692,7 @@ for dataset in dataset_list:
 
         # pvals = np.sort(data_results['p_lrt'])
 
-        # plt.scatter(y=-np.log10(pvals+1/len(data_results)), x=-np.log10(theoretical))
+        # plt.scatter(y=-np.log10(pvals+1e-300), x=-np.log10(theoretical))
         # plt.axline((0,0), slope=1, color='red')
         # plt.xlabel(r'Theoretical: $-\log_{10}(p)$')
         # plt.ylabel(r'Observed: $-\log_{10}(p)$')
@@ -660,7 +703,7 @@ for dataset in dataset_list:
         # results_df = pd.DataFrame(
         #     {
         #     'pos'  : snps['POS'].values[sample],
-        #     'pval' : -np.log10(data_results['p_lrt']+1/len(data_results)),
+        #     'pval' : -np.log10(data_results['p_lrt']+1e-300),
         #     'chr' : snps['CHR'].values[sample]
         #     }
         # )
@@ -671,7 +714,7 @@ for dataset in dataset_list:
 
         # alpha = -np.log10(0.05/len(pvals))
         # with sns.color_palette():
-        #    sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'])
+        #    sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'], linewidth=0)
         # plt.axline((0,alpha), slope=0, color='red')
         # chrom_df=results_df.groupby('chr')['i'].median()
         # plt.xlabel('chr') 
@@ -680,7 +723,7 @@ for dataset in dataset_list:
         # plt.savefig(os.path.join(OUTPUT, f"{dataset_name}_{pheno_name}_lrt_manhatten.png"))
         # plt.clf()
 
-        # plt.scatter(y=-np.log10(data_results['p_wald']+1/len(data_results)), x=-np.log10(data_results['p_lrt']+1/len(data_results)))
+        # plt.scatter(y=-np.log10(data_results['p_wald']+1e-300), x=-np.log10(data_results['p_lrt']+1e-300))
         # plt.axline((0,0), slope=1, color='red')
         # plt.xlabel(r'LRT: $-\log_{10}(p)$')
         # plt.ylabel(r'Wald: $-\log_{10}(p)$')
@@ -703,10 +746,10 @@ for dataset in dataset_list:
         p_vals_dict['linear_model'] = data_results['p_wald'].values
         p_vals_dict['linear_model_gc'] = data_results['p_wald_gc'].values
 
-        theoretical = np.linspace(1/len(data_results),1.0,len(data_results))
+        theoretical = np.linspace((1/len(data_results)) + (1e-300),1.0,len(data_results))
         pvals = np.sort(data_results['p_wald'])
         
-        plt.scatter(y=-np.log10(pvals+1/len(data_results)), x=-np.log10(theoretical))
+        plt.scatter(y=-np.log10(pvals+1e-300), x=-np.log10(theoretical))
         plt.axline((0,0), slope=1, color='red')
         plt.xlabel(r'Theoretical: $-\log_{10}(p)$')
         plt.ylabel(r'Observed: $-\log_{10}(p)$')
@@ -718,7 +761,7 @@ for dataset in dataset_list:
         results_df = pd.DataFrame(
             {
             'pos'  : snps['POS'].values[sample],
-            'pval' : -np.log10(data_results['p_wald']+1/len(data_results)),
+            'pval' : -np.log10(data_results['p_wald']+1e-300),
             'chr' : snps['CHR'].values[sample]
             }
         )
@@ -729,7 +772,7 @@ for dataset in dataset_list:
 
         alpha = -np.log10(0.05/len(pvals))
         with sns.color_palette():
-            sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'])
+            sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'], linewidth=0)
         plt.axline((0,alpha), slope=0, color='red')
         chrom_df=results_df.groupby('chr')['i'].median()
         plt.xlabel('chr') 
@@ -740,10 +783,10 @@ for dataset in dataset_list:
         plt.clf()
 
         # GC
-        theoretical = np.linspace(1/len(data_results),1.0,len(data_results))
+        theoretical = np.linspace((1/len(data_results)) + (1e-300),1.0,len(data_results))
         pvals = np.sort(data_results['p_wald_gc'])
         
-        plt.scatter(y=-np.log10(pvals+1/len(data_results)), x=-np.log10(theoretical))
+        plt.scatter(y=-np.log10(pvals+1e-300), x=-np.log10(theoretical))
         plt.axline((0,0), slope=1, color='red')
         plt.xlabel(r'Theoretical: $-\log_{10}(p)$')
         plt.ylabel(r'Observed: $-\log_{10}(p)$')
@@ -755,7 +798,7 @@ for dataset in dataset_list:
         results_df = pd.DataFrame(
             {
             'pos'  : snps['POS'].values[sample],
-            'pval' : -np.log10(data_results['p_wald_gc']+1/len(data_results)),
+            'pval' : -np.log10(data_results['p_wald_gc']+1e-300),
             'chr' : snps['CHR'].values[sample]
             }
         )
@@ -766,7 +809,7 @@ for dataset in dataset_list:
 
         alpha = -np.log10(0.05/len(pvals))
         with sns.color_palette():
-            sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'])
+            sns.scatterplot(x=results_df['i'], y=results_df['pval'], hue=results_df['chr'], linewidth=0)
         plt.axline((0,alpha), slope=0, color='red')
         chrom_df=results_df.groupby('chr')['i'].median()
         plt.xlabel('chr') 
