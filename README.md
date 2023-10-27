@@ -95,17 +95,17 @@ We provide a [test script](`https://github.com/rlangefe/pygemma/blob/main/tests/
 
 <table>
   <tr>
-    <td> <img src="./tests/output/Homework3_Pheno1_wald_qq.png"  alt="qq1" width = 360px height = 200px ></td>
-    <td><img src="./graphics/tests/Homework3_Pheno1_wald_manhatten.png" alt="manhattan1" width = 360px height = 200px></td>
+    <td> <img src="./tests/output/Homework3_Pheno1_wald_qq.png"  alt="qq1" width = 100% ></td>
+    <td><img src="./tests/output/Homework3_Pheno1_wald_manhatten.png" alt="manhattan1" width = 100%></td>
    </tr> 
    <tr>
-      <td><img src="./tests/output/Homework3_Pheno2_wald_qq.png" alt="qq2" width = 360px height = 200px></td>
-      <td><img src="./graphics/tests/Homework3_Pheno2_wald_manhatten.png" alt="manhattan2" width = 360px height = 200px>
+      <td><img src="./tests/output/Homework3_Pheno2_wald_qq.png" alt="qq2" width = 100%></td>
+      <td><img src="./tests/output/Homework3_Pheno2_wald_manhatten.png" alt="manhattan2" width = 100%
   </td>
   </tr>
   <tr>
-      <td><img src="./tests/output/Homework3_Pheno3_wald_qq.png" alt="qq3" width = 360px height = 200px></td>
-      <td><img src="./graphics/tests/Homework3_Pheno3_wald_manhatten.png" alt="manhattan3" width = 360px height = 200px>
+      <td><img src="./tests/output/Homework3_Pheno3_wald_qq.png" alt="qq3" width = 100%></td>
+      <td><img src="./tests/output/Homework3_Pheno3_wald_manhatten.png" alt="manhattan3" width = 100%>
   </td>
   </tr>
 </table>
