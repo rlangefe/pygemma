@@ -1,8 +1,5 @@
 # cython: infer_types=True
 # cython: language_level=3
-# cython: profile=True
-# cython: linetrace=True
-# distutils: define_macros=CYTHON_TRACE_NOGIL=1
 
 import numpy as np
 import pandas as pd
@@ -75,7 +72,7 @@ def calc_lambda(eigenVals, Y, W):
     return roots[np.argmax(likelihood_list)]
 
 
-def pygemma(Y, X, W, K, Z=None, snps=None, verbose=0, disable_checks=True, nproc=1):
+def pygemma(Y, X, W, K, Z=None, snps=None, verbose=0, disable_checks=True, de=False, nproc=1):
     if True: # Fix compatability issues with Python<=3.6.9 later (issue with rich package)
         console = Console()
     else:
@@ -341,13 +338,22 @@ def pygemma(Y, X, W, K, Z=None, snps=None, verbose=0, disable_checks=True, nproc
         results = []
         start = time.time()
         done = 0
-        for r in track(pool.imap(calculate, SampleIter(X_shared_np, Y_shared_np, W_shared_np, eigenVals, nproc)),
+        if de:
+            for r in track(pool.imap(calculate_de, SampleIter(X_shared_np, Y_shared_np, W_shared_np, eigenVals, nproc)),
                     description='Testing SNPs...', total=total):
-            # update the progress bar
-            done += 1
-            # progress.update(task, completed=done)
+                # update the progress bar
+                done += 1
+                # progress.update(task, completed=done)
 
-            results = results + r
+                results = results + r
+        else:
+            for r in track(pool.imap(calculate, SampleIter(X_shared_np, Y_shared_np, W_shared_np, eigenVals, nproc)),
+                        description='Testing SNPs...', total=total):
+                # update the progress bar
+                done += 1
+                # progress.update(task, completed=done)
+
+                results = results + r
 
         results_df = pd.DataFrame.from_dict(results)
     
@@ -416,6 +422,43 @@ def calculate(t):
             lambda_restricted = calc_lambda_restricted(eigenVals, Y, np.c_[W, X[:,g]])
             #beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted(eigenVals, W, X.reshape(-1,1), lambda_restricted, Y)
             beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted_overload(eigenVals, W, X[:,g].reshape(-1,1), lambda_restricted, Y)
+            F_wald = np.float64(beta/se_beta) ** 2.0
+
+            n = Y.shape[0]
+            c = W.shape[1]
+
+            results_list.append({
+                'beta': beta,
+                'se_beta': se_beta,
+                'tau': tau,
+                'lambda': lambda_restricted,
+                'F_wald': F_wald,
+                'p_wald': 1-stats.f.cdf(x=F_wald, dfn=1, dfd=n-c-1),
+            })
+        except np.linalg.LinAlgError as e:
+            print(e)
+            results_list.append({
+                'beta': np.nan,
+                'se_beta': np.nan,
+                'tau': np.nan,
+                'lambda': np.nan,
+                'F_wald': np.nan,
+                'p_wald': np.nan,
+            })
+
+    return results_list
+
+# Run with X ~ Wa + Yb + Zu + e
+def calculate_de(t):
+    eigenVals, Y, W, X = t
+
+    results_list = []
+
+    for g in range(X.shape[1]):
+        try:
+            lambda_restricted = calc_lambda_restricted(eigenVals, X[:,g], np.c_[W, Y.reshape(-1,1)])
+            #beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted(eigenVals, W, X.reshape(-1,1), lambda_restricted, Y)
+            beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted_overload(eigenVals, W, Y.reshape(-1,1), lambda_restricted, X[:,g].reshape(-1,1))
             F_wald = (beta/se_beta) ** 2.0
 
             n = Y.shape[0]

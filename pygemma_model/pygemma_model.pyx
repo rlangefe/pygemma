@@ -199,21 +199,21 @@ cpdef calc_lambda_restricted(np.ndarray[np.float32_t, ndim=1] eigenVals,
             #if np.sign(likelihood_lambda0) * np.sign(likelihood_lambda1) < 0:
             if copysignf(1.0, likelihood_lambda0) * copysignf(1.0, likelihood_lambda1) < 0:
                 
-                # lambda_min = optimize.brentq(f=wrapper_likelihood_derivative1_restricted_lambda, 
-                #                             a=lambda0,
-                #                             b=lambda1,
-                #                             rtol=1e-5,#rtol=0.1,
-                #                             maxiter=maxiter,
-                #                             args=(eigenVals, Y, W),
-                #                             disp=False)
-                
-                lambda_min = optimize.brenth(f=wrapper_likelihood_derivative1_restricted_lambda, 
+                lambda_min = optimize.brentq(f=wrapper_likelihood_derivative1_restricted_lambda, 
                                             a=lambda0,
                                             b=lambda1,
                                             rtol=0.1,
                                             maxiter=maxiter,
                                             args=(eigenVals, Y, W),
                                             disp=False)
+                
+                # lambda_min = optimize.brenth(f=wrapper_likelihood_derivative1_restricted_lambda, 
+                #                             a=lambda0,
+                #                             b=lambda1,
+                #                             rtol=0.1,
+                #                             maxiter=maxiter,
+                #                             args=(eigenVals, Y, W),
+                #                             disp=False)
 
                 #lambda_min = brenth_custom(lambda0, lambda1, eigenVals, Y, W, xtol=2e-12, rtol=0.1, maxiter=maxiter)
                 lambda_min = newton(lambda_min, eigenVals, Y, W, precompute=True, lambda_min=lambda0, lambda_max=lambda1)
@@ -1506,6 +1506,217 @@ cpdef precompute_mat(float lam,
 @cython.boundscheck(False) # turn off bounds-checking for entire function
 @cython.wraparound(False)  # turn off negative index wrapping for entire function
 @cython.cdivision(True)
+cpdef precompute_mat_concat(float lam,
+                      np.ndarray[np.float32_t, ndim=1] eigenVals,
+                      np.ndarray[np.float32_t, ndim=2] W_star,
+                      bint full=True):
+
+
+    cdef int i,j,k
+
+    cdef int c = W_star.shape[1] - 1
+
+    #cdef np.ndarray[np.float64_t, ndim=2] W_star = np.c_[W, Y].astype(np.float64)
+    
+    # I think this line is the expensive part
+    # index_tricks.py:323(__getitem__) is cited as taking 25% of the time
+    # Might be that continuing to concatenate is a problem
+    # Should change function to accept W_star as arg instead
+    # https://github.com/numpy/numpy/blob/2e8994d3d1c1edfd94cbbeb18771a3ea789a2eb3/numpy/lib/index_tricks.py#L310
+    #cdef np.ndarray[np.float64_t, ndim=2] W_star = np.asfortranarray(np.c_[W, Y], dtype=np.float64)
+    
+    # Note: W is now a matrix of shape (n, c+1), where n is the number of samples and c is the number of covariates
+    # W[:,c+1] is the phenotype vector
+
+    cdef np.ndarray[np.float64_t, ndim=1] Hi_eval = np.asfortranarray(1.0 / (lam*eigenVals + 1.0), dtype=np.float64)
+    #print(lam, Hi_eval[:5])
+
+    cdef np.ndarray[np.float64_t, ndim=3] wjt_Pi_wk = np.empty((c+1, 
+                                                                c+1, 
+                                                                c+1),
+                                                                dtype=np.float64,
+                                                                order='F')
+
+    cdef np.ndarray[np.float64_t, ndim=3] wjt_Pi_Pi_wk
+    cdef np.ndarray[np.float64_t, ndim=3] wjt_Pi_Pi_Pi_wk
+
+    cdef np.ndarray[np.float64_t, ndim=1] tr_Pi
+    cdef np.ndarray[np.float64_t, ndim=1] tr_Pi_Pi
+
+    cdef float logdet_Wt_H_inv_W = 0.0 #np.linalg.slogdet(W.T @ (Hi_eval[:,np.newaxis] * W))[1]
+
+    cdef np.ndarray[np.float64_t, ndim=2] temp_Pi, temp_PiPi, temp_PiPiPi
+
+    #start = time.time()
+
+    wjt_Pi_Pi_wk = np.empty((c+1, 
+                            c+1, 
+                            c+1), 
+                            dtype=np.float64,
+                            order='F')
+
+    tr_Pi = np.empty((c+1,), dtype=np.float64, order='F')
+
+    #temp_Pi = np.zeros((c+1, c+1), dtype=np.float64, order='F')
+    #temp_PiPi = np.zeros((c+1, c+1), dtype=np.float64, order='F')            
+    temp_Pi = np.empty((c+1, c+1), dtype=np.float64, order='F')
+    temp_PiPi = np.empty((c+1, c+1), dtype=np.float64, order='F')            
+        
+
+    #print(f"Pi @ Pi: {round(time.time() - start, 4)} s")
+
+    #start = time.time()
+    
+    #print(f"Trace Pi: {round(time.time() - start, 4)} s")
+
+
+    # If not performing full computation
+    # Skips computations if we only need first derivative (meaning brent)
+    if not full:
+        # Pi Computations
+        #start = time.time()
+        for i in range(c+1): # Loop for Pi
+            if i == 0:
+                temp_Pi[:,:] = blas.dsyrk(1.0, np.sqrt(Hi_eval[:,np.newaxis]) * W_star, trans=1, lower=1)
+                temp_Pi[i,i] = max(temp_Pi[i,i], MIN_VAL)
+
+                wjt_Pi_wk[i,:,:] = temp_Pi
+
+                temp_PiPi[:,:] = blas.dsyrk(1.0, Hi_eval[:,np.newaxis] * W_star, trans=1, lower=1)
+
+                wjt_Pi_Pi_wk[i,:,:] = temp_PiPi
+                tr_Pi[0] = Hi_eval.sum()
+            else:
+                tr_Pi[i] = tr_Pi[i-1] - temp_PiPi[i-1,i-1] / temp_Pi[i-1,i-1]
+
+                temp_PiPi[i:,i:] = blas.dsyr((temp_PiPi[i-1,i-1] / (temp_Pi[i-1,i-1] ** 2.0)), temp_Pi[i:,i-1], a=temp_PiPi[i:,i:], lower=1) \
+                        + blas.dsyr2(- 1.0 / temp_Pi[i-1,i-1], temp_Pi[i:,i-1], temp_PiPi[i:,i-1], lower=1)
+                
+                temp_PiPi[i,i] = max(temp_PiPi[i,i], MIN_VAL)
+
+                wjt_Pi_Pi_wk[i,i:,i:] = temp_PiPi[i:,i:]
+
+                logdet_Wt_H_inv_W += log(temp_Pi[i-1,i-1])
+
+                temp_Pi[i:,i:] = blas.dsyr(-1.0 / temp_Pi[i-1,i-1], temp_Pi[i:,i-1], a=temp_Pi[i:,i:], lower=1)
+
+                temp_Pi[i,i] = max(temp_Pi[i,i], MIN_VAL)
+
+                wjt_Pi_wk[i,i:,i:] = temp_Pi[i:,i:]
+        #start = time.time()
+        precompute_dict = {
+                        #'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c].astype(np.float32),
+                        'wjt_Pi_wk'                 : wjt_Pi_wk.swapaxes(0,1).astype(np.float32),
+                        'wjt_Pi_Pi_wk'              : wjt_Pi_Pi_wk.swapaxes(0,1).astype(np.float32),
+                        'yt_Pi_y'                   : wjt_Pi_wk[:, c, c].astype(np.float32),
+                        'yt_Pi_Pi_y'                : wjt_Pi_Pi_wk[:, c, c].astype(np.float32),
+                        'tr_Pi'                     : tr_Pi.astype(np.float32),
+                        'logdet_Wt_W'               : 0.0, #float(np.linalg.slogdet(W.T @ W)[1]),
+                        'logdet_Wt_H_inv_W'         : float(logdet_Wt_H_inv_W),
+                        'logdet_H'                  : float(np.log(lam*eigenVals + 1.0).sum()),
+                        #'logdet_H'                  : float(np.sum(np.log(lam*eigenVals + 1.0))),
+                        }
+        #print(f"Precompute: {round(time.time() - start, 4)} s")
+
+        return precompute_dict
+
+    else:
+        wjt_Pi_Pi_Pi_wk = np.empty((c+1, 
+                                    c+1, 
+                                    c+1), 
+                                    dtype=np.float64,
+                                    order='F')
+        
+        tr_Pi_Pi = np.empty((c+1,), dtype=np.float64, order='F')
+        
+        temp_PiPiPi = np.empty((c+1, c+1), dtype=np.float64, order='F')
+
+        # Pi Computations
+        #start = time.time()
+        for i in range(c+1): # Loop for Pi
+            if i == 0:
+                temp_Pi[:,:] = blas.dsyrk(1.0, np.sqrt(Hi_eval[:,np.newaxis]) * W_star, trans=1, lower=1)
+                
+                temp_Pi[i,i] = max(temp_Pi[i,i], MIN_VAL)
+
+                wjt_Pi_wk[i,:,:] = temp_Pi
+
+                temp_PiPi[:,:] = blas.dsyrk(1.0, Hi_eval[:,np.newaxis] * W_star, trans=1, lower=1)
+
+                wjt_Pi_Pi_wk[i,:,:] = temp_PiPi
+                tr_Pi[0] = Hi_eval.sum()
+
+                temp_PiPiPi[:,:] = np.dot(W_star.T, (Hi_eval ** 3.0)[:,np.newaxis] * W_star)
+
+                wjt_Pi_Pi_Pi_wk[i,:,:] = temp_PiPiPi
+
+                tr_Pi_Pi[0] = np.dot(Hi_eval,Hi_eval) #np.sum(Hi_eval ** 2.0)
+            else:
+                tr_Pi_Pi[i] = tr_Pi_Pi[i-1] + ((temp_PiPi[i-1,i-1] / temp_Pi[i-1,i-1]) ** 2.0) \
+                                    - 2 * (temp_PiPiPi[i-1,i-1] / temp_Pi[i-1,i-1])
+
+                temp_PiPiPi[i:,i:] = blas.dsyr((temp_PiPiPi[i-1,i-1] / (temp_Pi[i-1,i-1] ** 2.0)) - ((temp_PiPi[i-1,i-1] ** 2.0) / (temp_Pi[i-1,i-1] ** 3.0)), temp_Pi[i:,i-1], a=temp_PiPiPi[i:,i:], lower=1) \
+                        + blas.dsyr2(- 1.0 / temp_Pi[i-1,i-1], temp_Pi[i:,i-1], temp_PiPiPi[i:,i-1], lower=1) \
+                        + blas.dsyr(- 1.0 / temp_Pi[i-1,i-1], temp_PiPi[i:,i-1], lower=1) \
+                        + blas.dsyr2(temp_PiPi[i-1,i-1] / (temp_Pi[i-1,i-1] ** 2.0), temp_Pi[i:,i-1], temp_PiPi[i:,i-1], lower=1)
+                
+                temp_PiPiPi[i,i] = max(temp_PiPiPi[i,i], MIN_VAL)
+
+                wjt_Pi_Pi_Pi_wk[i,i:,i:] = temp_PiPiPi[i:,i:]
+
+                tr_Pi[i] = tr_Pi[i-1] - temp_PiPi[i-1,i-1] / temp_Pi[i-1,i-1]
+
+                temp_PiPi[i:,i:] = blas.dsyr((temp_PiPi[i-1,i-1] / (temp_Pi[i-1,i-1] ** 2.0)), temp_Pi[i:,i-1], a=temp_PiPi[i:,i:], lower=1) \
+                        + blas.dsyr2(- 1.0 / temp_Pi[i-1,i-1], temp_Pi[i:,i-1], temp_PiPi[i:,i-1], lower=1)
+                
+                temp_PiPi[i,i] = max(temp_PiPi[i,i], MIN_VAL)
+
+                wjt_Pi_Pi_wk[i,i:,i:] = temp_PiPi[i:,i:]
+
+                logdet_Wt_H_inv_W += log(temp_Pi[i-1,i-1])
+
+                temp_Pi[i:,i:] = blas.dsyr(-1.0 / temp_Pi[i-1,i-1], temp_Pi[i:,i-1], a=temp_Pi[i:,i:], lower=1)
+
+                
+                temp_Pi[i,i] = max(temp_Pi[i,i], MIN_VAL)
+                
+                wjt_Pi_wk[i,i:,i:] = temp_Pi[i:,i:]
+
+            
+
+        #print(f"Pi @ Pi @ Pi: {round(time.time() - start, 4)} s")
+
+
+        # Use np.cumsum to compute trace
+        #start = time.time()
+
+        #print(f"Trace Pi @ Pi: {round(time.time() - start, 4)} s")
+
+        #start = time.time()
+        precompute_dict = {
+                            #'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c].astype(np.float32),
+                            'wjt_Pi_wk'                 : wjt_Pi_wk.swapaxes(0,1).astype(np.float32),
+                            'wjt_Pi_Pi_wk'              : wjt_Pi_Pi_wk.swapaxes(0,1).astype(np.float32),
+                            'wjt_Pi_Pi_Pi_wk'           : wjt_Pi_Pi_Pi_wk.swapaxes(0,1).astype(np.float32),
+                            'tr_Pi'                     : tr_Pi.astype(np.float32),
+                            'tr_Pi_Pi'                  : tr_Pi_Pi.astype(np.float32),
+                            'yt_Pi_y'                   : wjt_Pi_wk[:, c, c].astype(np.float32),
+                            'yt_Pi_Pi_y'                : wjt_Pi_Pi_wk[:, c, c].astype(np.float32),
+                            'yt_Pi_Pi_Pi_y'             : wjt_Pi_Pi_Pi_wk[:, c, c].reshape(-1).astype(np.float32),
+                            'logdet_Wt_W'               : 0.0, #float(np.linalg.slogdet(W.T @ W)[1]),
+                            'logdet_Wt_H_inv_W'         : float(logdet_Wt_H_inv_W),
+                            'logdet_H'                  : float(np.log(lam*eigenVals + 1.0).sum()),
+                            #'logdet_H'                  : float(np.sum(np.log(lam*eigenVals + 1.0))),
+                            }
+        #print(f"Precompute: {round(time.time() - start, 4)} s")
+        
+        #print(f"Runtime: {round(time.time() - start, 4)} s")
+
+        return precompute_dict
+
+@cython.boundscheck(False) # turn off bounds-checking for entire function
+@cython.wraparound(False)  # turn off negative index wrapping for entire function
+@cython.cdivision(True)
 cdef precompute_Pi(cython.double[:,:] W,
                    cython.double[:] Hi_eval):
 
@@ -1536,6 +1747,8 @@ cdef precompute_Pi(cython.double[:,:] W,
             wjt_Pi_wk[i,i,i] = MIN_VAL
 
     return wjt_Pi_wk
+
+
 
 @cython.boundscheck(False) # turn off bounds-checking for entire function
 @cython.wraparound(False)  # turn off negative index wrapping for entire function
