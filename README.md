@@ -1,3 +1,4 @@
+![pygemma_logo](graphics/pyGEMMA_logo.png)
 # pyGEMMA - A Python Implementation of Genome-Wide Efficient Mixed-Model Analysis (GEMMA)
 
 ## Table of Contents
