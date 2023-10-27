@@ -67,7 +67,7 @@ $$
 $$
 
 $$
-\varepsilon \sim \mathcal{\text{MVN}}_{n}(\mathbf{0}, \tau^{-1} \mathbf{I}_{n})
+\mathbf{\varepsilon} \sim \mathcal{\text{MVN}}_{n} \left(\mathbf{0},\tau^{-1} \mathbf{I}_n \right)
 $$
 
 where $\mathbf{y}$  is $n \times 1$ is the vector phenotype, $\mathbf{W}$ is $n \times c$ is the matrix of fixed effect covariates (including the intercept), $\mathbf{\alpha}$ is the $c \times 1$ vector of coefficients for the covariates, $\mathbf{x}$ is the $n \times 1$ vector of genotypes, $beta$ is the effect size of the genotype, $\mathbf{Z}$ is the $n \times m$ loading matrix, $\mathbf{u}$ is the $m \times 1$ vector of random effects, $\mathbf{\varepsilon}$ is the $n \times 1$ vector of errors, $\tau^{-1}$ is the variance of the resitual errors, $\lambda$ is the ratio between the two variances components, and $\mathbf{K}$ is the relatedness matrix. (Description adapted from [Zhou et al. (Nat Gen 2012)](https://www.nature.com/articles/ng.2310))
