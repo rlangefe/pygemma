@@ -1,5 +1,10 @@
+# cython: infer_types=True
+# cython: language_level=3
+
 import numpy as np
 import pandas as pd
+
+import ctypes
 
 try:
     from rich.progress import track, Progress
@@ -67,11 +72,13 @@ def calc_lambda(eigenVals, Y, W):
     return roots[np.argmax(likelihood_list)]
 
 
-def pygemma(Y, X, W, K, Z=None, snps=None, verbose=0, disable_checks=True, nproc=1):
+def pygemma(Y, X, W, K, Z=None, snps=None, verbose=0, disable_checks=True, de=False, nproc=1):
     if True: # Fix compatability issues with Python<=3.6.9 later (issue with rich package)
         console = Console()
     else:
         verbose = 0
+
+    nproc = min(nproc, X.shape[1])
 
     if Y.dtype != np.float32:
         Y = Y.astype(np.float32).reshape(-1,1)
@@ -209,11 +216,11 @@ def pygemma(Y, X, W, K, Z=None, snps=None, verbose=0, disable_checks=True, nproc
     if verbose > 0:
         console.log(f"[green]Running {X.shape[1]} SNPs with {Y.shape[0]} individuals...")
 
-    if verbose > 0:
-        #progress_bar = track(range(X.shape[1]), description='Testing SNPs...') #Uncomment later for good visualization and timing
-        progress_bar = range(X.shape[1])
-    else:
-        progress_bar = range(X.shape[1])
+    # if verbose > 0:
+    #     #progress_bar = track(range(X.shape[1]), description='Testing SNPs...') #Uncomment later for good visualization and timing
+    #     progress_bar = range(X.shape[1])
+    # else:
+    #     progress_bar = range(X.shape[1])
 
     # for g in progress_bar:
     #     try:
@@ -276,29 +283,82 @@ def pygemma(Y, X, W, K, Z=None, snps=None, verbose=0, disable_checks=True, nproc
         if rank == 0:
             results_df = pd.DataFrame.from_dict(results)
     '''
-    with multiprocessing.Pool(nproc) as pool:
-        total = X.shape[1]
+    # with multiprocessing.Pool(nproc) as pool:
+    #     total = nproc #X.shape[1]
 
-        #progress = Progress()
-        #task = progress.add_task("Testing SNPs...", total=total)
-        #progress.update(task, completed=0)
+    #     #progress = Progress()
+    #     #task = progress.add_task("Testing SNPs...", total=total)
+    #     #progress.update(task, completed=0)
 
-        #result_iterator = pool.starmap_async(calculate, SampleIter(X, Y, W, eigenVals))
+    #     #result_iterator = pool.starmap_async(calculate, SampleIter(X, Y, W, eigenVals))
         
-        results = []
-        #while not result_iterator.ready():
+    #     results = []
+    #     #while not result_iterator.ready():
 
+    #     start = time.time()
+    #     done = 0
+    #     for r in track(pool.imap(calculate, SampleIter(X, Y, W, eigenVals, nproc)), description='Testing SNPs...', total=total):
+    #         # update the progress bar
+    #         done += 1
+    #         #progress.update(task, completed=done)
+            
+    #         results = results + r
+
+    #     results_df = pd.DataFrame.from_dict(results)
+
+    #     # def update_results(r):
+    #     #     results.extend(r)
+
+
+    #     # pool.map_async(calculate, SampleIter(X, Y, W, eigenVals, nproc), callback=update_results)
+
+    #     # pool.close()
+    #     # pool.join()
+
+    # Create shared arrays for X, Y, and W
+    X_shared = multiprocessing.Array(ctypes.c_float, X.size)
+    Y_shared = multiprocessing.Array(ctypes.c_float, Y.size)
+    W_shared = multiprocessing.Array(ctypes.c_float, W.size)
+
+    # Copy data to shared arrays
+    X_shared_np = np.frombuffer(X_shared.get_obj(), dtype=np.float32).reshape(X.shape)
+    X_shared_np[:] = X[:]
+
+    Y_shared_np = np.frombuffer(Y_shared.get_obj(), dtype=np.float32).reshape(Y.shape)
+    Y_shared_np[:] = Y[:]
+
+    W_shared_np = np.frombuffer(W_shared.get_obj(), dtype=np.float32).reshape(W.shape)
+    W_shared_np[:] = W[:]
+
+    with multiprocessing.Pool(nproc) as pool:
+        total = nproc  # X_shared_buf.shape[1]
+
+        # ...
+
+        results = []
+        start = time.time()
         done = 0
-        for r in track(pool.imap(calculate, SampleIter(X, Y, W, eigenVals)), description='Testing SNPs...', total=total):
-            # update the progress bar
-            done += 1
-            #progress.update(task, completed=done)
-            
-            results.append(r)
-            
+        if de:
+            for r in track(pool.imap(calculate_de, SampleIter(X_shared_np, Y_shared_np, W_shared_np, eigenVals, nproc)),
+                    description='Testing SNPs...', total=total):
+                # update the progress bar
+                done += 1
+                # progress.update(task, completed=done)
+
+                results = results + r
+        else:
+            for r in track(pool.imap(calculate, SampleIter(X_shared_np, Y_shared_np, W_shared_np, eigenVals, nproc)),
+                        description='Testing SNPs...', total=total):
+                # update the progress bar
+                done += 1
+                # progress.update(task, completed=done)
+
+                results = results + r
 
         results_df = pd.DataFrame.from_dict(results)
     
+
+    # print(f"Finished testing {X.shape[1]} SNPs in {round(time.time() - start,3)} s")    
 
     if snps is not None:
         results_df['SNPs'] = snps
@@ -306,54 +366,210 @@ def pygemma(Y, X, W, K, Z=None, snps=None, verbose=0, disable_checks=True, nproc
     return results_df
 
 class SampleIter:
-    def __init__ (self, X, Y, W, eigenVals):
+    def __init__(self, X, Y, W, eigenVals, nproc):
         self.X = X
         self.Y = Y
         self.W = W
         self.eigenVals = eigenVals
-        self.g = 0
-        self.c = X.shape[1]
-    
+        self.nproc = nproc
+        self.n_cols = X.shape[1]
+        self.current_proc = 0
+
     def __iter__(self):
         return self
 
     def __next__(self):
-        if self.g < self.c:
-            self.g += 1
-            return (self.eigenVals, self.Y, self.W, self.X[:,self.g-1])
+        if self.current_proc < self.nproc:
+            cols_per_proc = int(np.ceil(self.n_cols / self.nproc))
+            start_col = self.current_proc * cols_per_proc
+            end_col = min((self.current_proc + 1) * cols_per_proc, self.n_cols)
+            self.current_proc += 1
+
+            return self.eigenVals, self.Y, self.W, self.X[:, start_col:end_col]
         else:
             raise StopIteration
 
-        
+# class SampleIter:
+#     def __init__(self, X, Y, W, eigenVals, nproc):
+#         self.X = X
+#         self.Y = Y
+#         self.W = W
+#         self.eigenVals = eigenVals
+#         self.nproc = nproc
+#         self.n_cols = X.shape[1]
+#         self.current_col = 0
+    
+#     def __iter__(self):
+#         return self
+
+#     def __next__(self):
+#         if self.current_col < self.n_cols:
+#             start_col = self.current_col
+#             self.current_col += self.nproc
+#             end_col = min(self.current_col, self.n_cols)
+
+#             return self.eigenVals, self.Y, self.W, self.X[:, start_col:end_col]
+#         else:
+#             raise StopIteration
+
 def calculate(t):
     eigenVals, Y, W, X = t
-    try:
-        lambda_restricted = calc_lambda_restricted(eigenVals, Y, np.c_[W, X])
-        #beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted(eigenVals, W, X.reshape(-1,1), lambda_restricted, Y)
-        beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted_overload(eigenVals, W, X.reshape(-1,1), lambda_restricted, Y)
-        F_wald = (beta/se_beta) ** 2.0
 
-        n = Y.shape[0]
-        c = W.shape[1]
+    results_list = []
 
-        return {
-            'beta': beta,
-            'se_beta': se_beta,
-            'tau': tau,
-            'lambda': lambda_restricted,
-            'F_wald': F_wald,
-            'p_wald': 1-stats.f.cdf(x=F_wald, dfn=1, dfd=n-c-1),
-        }
-    except np.linalg.LinAlgError as e:
-        print(e)
-        return {
-            'beta': np.nan,
-            'se_beta': np.nan,
-            'tau': np.nan,
-            'lambda': np.nan,
-            'F_wald': np.nan,
-            'p_wald': np.nan,
-        }
+    for g in range(X.shape[1]):
+        try:
+            lambda_restricted = calc_lambda_restricted(eigenVals, Y, np.c_[W, X[:,g]])
+            #beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted(eigenVals, W, X.reshape(-1,1), lambda_restricted, Y)
+            beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted_overload(eigenVals, W, X[:,g].reshape(-1,1), lambda_restricted, Y)
+            F_wald = np.float64(beta/se_beta) ** 2.0
+
+            n = Y.shape[0]
+            c = W.shape[1]
+
+            results_list.append({
+                'beta': beta,
+                'se_beta': se_beta,
+                'tau': tau,
+                'lambda': lambda_restricted,
+                'F_wald': F_wald,
+                'p_wald': 1-stats.f.cdf(x=F_wald, dfn=1, dfd=n-c-1),
+            })
+        except np.linalg.LinAlgError as e:
+            print(e)
+            results_list.append({
+                'beta': np.nan,
+                'se_beta': np.nan,
+                'tau': np.nan,
+                'lambda': np.nan,
+                'F_wald': np.nan,
+                'p_wald': np.nan,
+            })
+
+    return results_list
+
+# Run with X ~ Wa + Yb + Zu + e
+def calculate_de(t):
+    eigenVals, Y, W, X = t
+
+    results_list = []
+
+    for g in range(X.shape[1]):
+        try:
+            lambda_restricted = calc_lambda_restricted(eigenVals, X[:,g], np.c_[W, Y.reshape(-1,1)])
+            #beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted(eigenVals, W, X.reshape(-1,1), lambda_restricted, Y)
+            beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted_overload(eigenVals, W, Y.reshape(-1,1), lambda_restricted, X[:,g].reshape(-1,1))
+            F_wald = (beta/se_beta) ** 2.0
+
+            n = Y.shape[0]
+            c = W.shape[1]
+
+            results_list.append({
+                'beta': beta,
+                'se_beta': se_beta,
+                'tau': tau,
+                'lambda': lambda_restricted,
+                'F_wald': F_wald,
+                'p_wald': 1-stats.f.cdf(x=F_wald, dfn=1, dfd=n-c-1),
+            })
+        except np.linalg.LinAlgError as e:
+            print(e)
+            results_list.append({
+                'beta': np.nan,
+                'se_beta': np.nan,
+                'tau': np.nan,
+                'lambda': np.nan,
+                'F_wald': np.nan,
+                'p_wald': np.nan,
+            })
+
+    return results_list
+        
+# def calculate(t):
+#     eigenVals, Y, W, X = t
+
+#     results_list = []
+
+#     for g in range(X.shape[1]):
+#         try:
+#             lambda_restricted = calc_lambda_restricted(eigenVals, Y, np.c_[W, X[:,g]])
+#             #beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted(eigenVals, W, X.reshape(-1,1), lambda_restricted, Y)
+#             beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted_overload(eigenVals, W, X[:,g].reshape(-1,1), lambda_restricted, Y)
+#             F_wald = (beta/se_beta) ** 2.0
+
+#             n = Y.shape[0]
+#             c = W.shape[1]
+
+#             results_list.append({
+#                 'beta': beta,
+#                 'se_beta': se_beta,
+#                 'tau': tau,
+#                 'lambda': lambda_restricted,
+#                 'F_wald': F_wald,
+#                 'p_wald': 1-stats.f.cdf(x=F_wald, dfn=1, dfd=n-c-1),
+#             })
+#         except np.linalg.LinAlgError as e:
+#             print(e)
+#             results_list.append({
+#                 'beta': np.nan,
+#                 'se_beta': np.nan,
+#                 'tau': np.nan,
+#                 'lambda': np.nan,
+#                 'F_wald': np.nan,
+#                 'p_wald': np.nan,
+#             })
+
+#     return results_list
+
+# class SampleIter:
+#     def __init__ (self, X, Y, W, eigenVals):
+#         self.X = X
+#         self.Y = Y
+#         self.W = W
+#         self.eigenVals = eigenVals
+#         self.g = 0
+#         self.c = X.shape[1]
+    
+#     def __iter__(self):
+#         return self
+
+#     def __next__(self):
+#         if self.g < self.c:
+#             self.g += 1
+#             return (self.eigenVals, self.Y, self.W, self.X[:,self.g-1])
+#         else:
+#             raise StopIteration
+
+        
+# def calculate(t):
+#     eigenVals, Y, W, X = t
+#     try:
+#         lambda_restricted = calc_lambda_restricted(eigenVals, Y, np.c_[W, X])
+#         #beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted(eigenVals, W, X.reshape(-1,1), lambda_restricted, Y)
+#         beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted_overload(eigenVals, W, X.reshape(-1,1), lambda_restricted, Y)
+#         F_wald = (beta/se_beta) ** 2.0
+
+#         n = Y.shape[0]
+#         c = W.shape[1]
+
+#         return {
+#             'beta': beta,
+#             'se_beta': se_beta,
+#             'tau': tau,
+#             'lambda': lambda_restricted,
+#             'F_wald': F_wald,
+#             'p_wald': 1-stats.f.cdf(x=F_wald, dfn=1, dfd=n-c-1),
+#         }
+#     except np.linalg.LinAlgError as e:
+#         print(e)
+#         return {
+#             'beta': np.nan,
+#             'se_beta': np.nan,
+#             'tau': np.nan,
+#             'lambda': np.nan,
+#             'F_wald': np.nan,
+#             'p_wald': np.nan,
+#         }
 
 try:
     from pygemma.pygemma_model import *
