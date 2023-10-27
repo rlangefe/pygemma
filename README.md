@@ -1,6 +1,6 @@
 <img src="./graphics/tests/pyGEMMA_logo.png" alt="logo" width = 200px height = 200px >
 
-# pyGEMMA - A Python Implementation of Genome-Wide Efficient Mixed-Model Analysis (GEMMA)
+# pyGEMMA: A Fast, User-Friendly Python/R Implementation of Linear Mixed Models for Genome-Wide Association Studies
 
 ## Table of Contents
 
