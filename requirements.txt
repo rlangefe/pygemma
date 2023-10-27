@@ -1,7 +1,7 @@
-numpy
+numpy==1.21.6
 cppy
 kiwisolver==1.0.1
-pandas
+pandas==1.3.5
 seaborn
 pillow<=8.4
 matplotlib<=3.3
