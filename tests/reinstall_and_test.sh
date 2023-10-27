@@ -4,7 +4,7 @@ TOPDIR="/net/mulan/home/rlangefe/gemma_work"
 PYGEMMADIR="${TOPDIR}/pygemma"
 TESTDIR="${PYGEMMADIR}/tests"
 
-source "${TOPDIR}/test-env/bin/activate"
+source "/net/mulan/home/rlangefe/gemma_work/pygemma-env/bin/activate"
 
 cd ${PYGEMMADIR}
 pip uninstall -y pygemma

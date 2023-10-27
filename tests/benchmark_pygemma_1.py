@@ -187,7 +187,7 @@ if __name__ == "__main__":
         ]
 
     # Make benchmark directory
-    BENCHMARK_DIR = '/net/mulan/home/rlangefe/gemma_work/pygemma/tests/benchmark_test_32'
+    BENCHMARK_DIR = '/net/mulan/home/rlangefe/gemma_work/pygemma/tests/benchmark_test_1'
 
     def sim_function(sample_size, num_snps, num_covars):
         for dataset in dataset_list:
