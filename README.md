@@ -1,4 +1,4 @@
-<img src="./graphics/tests/pyGEMMA_logo.png" style="border-radius: 50%;" alt="qq1" width = 360px height = 360px >
+<img src="./graphics/tests/pyGEMMA_logo.png" alt="logo" width = 200px height = 200px >
 
 # pyGEMMA - A Python Implementation of Genome-Wide Efficient Mixed-Model Analysis (GEMMA)
 
