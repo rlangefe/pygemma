@@ -39,6 +39,8 @@ python3 -m virtualenv pygemma_env
 source pygemma_env/bin/activate
 ```
 
+Note: If `pip3 install virtualenv` fails because it can't find `pip3`, you can try running `python3 -m pip install virtualenv` instead. This looks for the `pip` module directly if `pip3` isn't in your `PATH`. 
+
 2. Ensure the `Numpy` and `Cython` packages are both installed prior to installing `pyGEMMA` (they will not be installed automatically). This can be done by running 
 ```bash
 pip install numpy Cython
