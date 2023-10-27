@@ -45,9 +45,13 @@ pip install numpy Cython
 ```
 
 3. Clone this repository.
-4. Ensure that you have a valid `C/C++` compiler loaded. `pyGEMMA` has been tested using `gcc/g++`.
+4. Install `pyGEMMA`'s dependencies. From the `pygemma` directory, this can be done by running
+```bash
+pip install -r requirements.txt
+```
+6. Ensure that you have a valid `C/C++` compiler loaded. `pyGEMMA` has been tested using `gcc/g++`.
 
-5. Install `pyGEMMA`. From the `pygemma` directory, this can be done by running 
+7. Install `pyGEMMA`. From the `pygemma` directory, this can be done by running 
 ```bash
 python setup.py install
 ```
