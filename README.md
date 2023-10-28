@@ -30,7 +30,7 @@ The current implementation of `pyGEMMA` was tested on the following configuratio
 - [qnorm 0.8.1](https://github.com/Maarten-vd-Sande/qnorm)
 
 ## Installation
-The installation of `pyGEMMA` is straightforward and can be informed using Python's `pip` package manager. Here, we detail the installation process using a `virtualenv` Python enviroment. This has been tested with the configuration listed in the [Software Requirements](#software-requirements) section. While installation may be possible with other configurations, we it has only been tested with the configuration we list.
+The installation of `pyGEMMA` is straightforward and can be performed using Python's `pip` package manager. Here, we detail the installation process using a `virtualenv` Python enviroment. This has been tested with the configuration listed in the [Software Requirements](#software-requirements) section. While installation may be possible with other configurations, we it has only been tested with the configuration we list.
 
 1. Create your Python environment and activate it. Using `virtualenv`, this can be done by running
 ```bash
