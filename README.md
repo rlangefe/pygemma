@@ -88,6 +88,9 @@ lmm.pygemma(Y, X, W, K, snps=snps, verbose=1)
 
 Note that `snps` is a list of SNP names that will be used to label the `pandas DataFrame` returned by the function. `verbose` controls whether to output run progress.
 
+#### pyGEMMA in R
+We have also developed an R interface for pyGEMMA, enabling its use within the R programming environment. A comprehensive tutorial for this integration can be found [here](`https://github.com/rlangefe/pygemma/blob/main/pyGEMMA.html`)
+
 ## Examples
 
 ### Test Script
