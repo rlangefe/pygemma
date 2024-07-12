@@ -187,7 +187,7 @@ if __name__ == "__main__":
         ]
 
     # Make benchmark directory
-    BENCHMARK_DIR = '/net/mulan/home/rlangefe/gemma_work/pygemma/tests/benchmark_test_32'
+    BENCHMARK_DIR = '/net/mulan/home/rlangefe/gemma_work/pygemma/tests/benchmark_full'
 
     def sim_function(sample_size, num_snps, num_covars):
         for dataset in dataset_list:
@@ -301,8 +301,8 @@ if __name__ == "__main__":
                     return total_time, np.nan
 
     num_runs = 5
-    #max_snps = 100000
-    max_snps = 60000
+    max_snps = 100000
+    #max_snps = 60000
     max_individuals = 449
     max_covars = 25
 
