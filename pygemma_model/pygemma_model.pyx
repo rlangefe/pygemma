@@ -1,8 +1,20 @@
+"""
+This module contains functions for calculating the lambda value that maximizes the likelihood function for a restricted model.
+
+Functions:
+- run_function_test(function, parameters): Runs a function test and measures the execution time.
+- calc_lambda_restricted(eigenVals, Y, W, precompute=True): Calculates the lambda value that maximizes the likelihood function for a restricted model.
+    - eigenVals: Eigenvalues of the data.
+    - Y: Data matrix.
+    - W: Covariate matrix.
+    - precompute: Whether to precompute intermediate values for faster computation. Default is True.
+    Returns the lambda value that maximizes the likelihood function.
+"""
 # cython: infer_types=True
 # cython: language_level=3
-# cython: profile=True
-# cython: linetrace=True
-# distutils: define_macros=CYTHON_TRACE_NOGIL=1
+# cython: profile=False
+# cython: linetrace=False
+# distutils: define_macros=CYTHON_TRACE_NOGIL=0
 
 import cython
 cimport numpy as np
@@ -45,99 +57,28 @@ def run_function_test(function, parameters):
         print(f"[green]Passed {function.__name__} - {diff} s")
         return result
 
-@cython.boundscheck(False)
-@cython.wraparound(False)
-@cython.cdivision(True)
-cdef brenth_custom(float a, 
-                   float b, 
-                   np.ndarray[np.float32_t, ndim=1] eigenVals, 
-                   np.ndarray[np.float32_t, ndim=2] Y, 
-                   np.ndarray[np.float32_t, ndim=2] W, 
-                   float xtol=2e-12, 
-                   float rtol=8.8817841970012523e-16, 
-                   int maxiter=100):
-    cdef float a_, b_, c, d, e, m, p, q, r, s, tol, xm
-    cdef int itercount
-    cdef float fa, fb, fc
 
-    a_ = a
-    b_ = b
-
-    fa = wrapper_likelihood_derivative1_restricted_lambda(a_, eigenVals, Y, W)
-    fb = wrapper_likelihood_derivative1_restricted_lambda(b_, eigenVals, Y, W)
-
-    c = a_
-    fc = fa
-    e = d = b_ - a_
-
-    itercount = 0
-    while itercount < maxiter:
-        if fabs(fc) < fabs(fb):
-            a_ = b_
-            b_ = c
-            c = a_
-            fa = fb
-            fb = fc
-            fc = fa
-
-        tol = 2.0 * xtol * fabs(b_) + rtol * fabs(b_)
-        xm = 0.5 * (c - b_)
-
-        if fabs(xm) <= tol or fb == 0.0:
-            return b_
-
-        if fabs(e) >= tol and fabs(fa) > fabs(fb):
-            s = fb / fa
-
-            if a_ == c:
-                p = 2.0 * xm * s
-                q = 1.0 - s
-            else:
-                q = fa / fc
-                r = fb / fc
-                p = s * (2.0 * xm * q * (q - r) - (b_ - a_) * (r - 1.0))
-                q = (q - 1.0) * (r - 1.0) * (s - 1.0)
-
-            if p > 0:
-                q = -q
-
-            p = fabs(p)
-            min1 = 3.0 * xm * q - fabs(tol * q)
-            min2 = fabs(e * q)
-            if 2.0 * p < (min1 if min1 < min2 else min2):
-                e = d
-                d = p / q
-            else:
-                d = xm
-                e = d
-        else:
-            d = xm
-            e = d
-
-        a_ = b_
-        fa = fb
-
-        if fabs(d) > tol:
-            b_ += d
-        else:
-            b_ += copysignf(1.0, xm) * tol
-
-        itercount += 1
-
-        if itercount >= maxiter:
-            break
-
-        fb = wrapper_likelihood_derivative1_restricted_lambda(b_, eigenVals, Y, W)
-
-    return b_
-    
 @cython.boundscheck(False) # turn off bounds-checking for entire function
 @cython.wraparound(False)  # turn off negative index wrapping for entire function
 @cython.cdivision(True)
 cpdef calc_lambda_restricted(np.ndarray[np.float32_t, ndim=1] eigenVals,  
                              np.ndarray[np.float32_t, ndim=2] Y, 
                              np.ndarray[np.float32_t, ndim=2] W,
-                             bint precompute=True):
+                             bint precompute=True,
+                             bint grid=False):
+    """
+    Calculate the lambda value that maximizes the likelihood function for a restricted model.
+
+    Parameters:
+    - eigenVals: Eigenvalues of the data.
+    - Y: Data matrix.
+    - W: Covariate matrix.
+    - precompute: Whether to precompute intermediate values for faster computation. Default is True.
+
+    Returns:
+    - The lambda value that maximizes the likelihood function.
+    """
+    
     # Loop over intervals and find where likelihood changes signs with respect to lambda
     cdef np.float32_t step = 1.0
 
@@ -154,6 +95,42 @@ cpdef calc_lambda_restricted(np.ndarray[np.float32_t, ndim=1] eigenVals,
     cdef c = W.shape[1] - 1
 
     cdef float best_lambda, best_likelihood
+
+    if grid:
+        # Perform grid search
+        roots = [10.0 ** lambda_pow_low, 10.0 ** lambda_pow_high]
+
+        precomp_low = precompute_mat(roots[0], eigenVals, W, Y, full=False)
+        precomp_high = precompute_mat(roots[1], eigenVals, W, Y, full=False)
+
+        likelihood_list = [likelihood_restricted_lambda_overload(roots[0], n, c+1, precomp_low['yt_Pi_y'][c+1], precomp_low['logdet_H'], precomp_low['logdet_Wt_W'], precomp_low['logdet_Wt_H_inv_W']), 
+                           likelihood_restricted_lambda_overload(roots[1], n, c+1, precomp_high['yt_Pi_y'][c+1], precomp_high['logdet_H'], precomp_high['logdet_Wt_W'], precomp_high['logdet_Wt_H_inv_W'])]
+
+        best_likelihood = likelihood_restricted_lambda_overload(roots[0], n, c+1, precomp_low['yt_Pi_y'][c+1], precomp_low['logdet_H'], precomp_low['logdet_Wt_W'], precomp_low['logdet_Wt_H_inv_W'])
+
+        likelihood_lambda0 = likelihood_restricted_lambda_overload(roots[1], n, c+1, precomp_high['yt_Pi_y'][c+1], precomp_high['logdet_H'], precomp_high['logdet_Wt_W'], precomp_high['logdet_Wt_H_inv_W'])
+
+        if best_likelihood < likelihood_lambda0:
+            best_likelihood = likelihood_lambda0
+            best_lambda = roots[1]
+        else:
+            best_lambda = roots[0]
+
+        for idx in range(lambda_possible.shape[0]):
+            lambda_idx = lambda_possible[idx]
+
+            lambda_min = pow(10.0, lambda_idx)
+            
+            precompute_dict = precompute_mat(lambda_min, eigenVals, W, Y, full=False)
+
+            likelihood_lambda0 = likelihood_restricted_lambda_overload(lambda_min, n, c+1, precompute_dict['yt_Pi_y'][c+1], precompute_dict['logdet_H'], precompute_dict['logdet_Wt_W'], precompute_dict['logdet_Wt_H_inv_W'])
+
+            if likelihood_lambda0 > best_likelihood:
+                best_likelihood = likelihood_lambda0
+                best_lambda = lambda_min
+        
+        return best_lambda
+                
 
     if precompute:
         roots = [10.0 ** lambda_pow_low, 10.0 ** lambda_pow_high]
@@ -176,9 +153,6 @@ cpdef calc_lambda_restricted(np.ndarray[np.float32_t, ndim=1] eigenVals,
 
         for idx in range(lambda_possible.shape[0]):
             lambda_idx = lambda_possible[idx]
-
-            # lambda0 = 10.0 ** (lambda_idx)
-            # lambda1 = 10.0 ** (lambda_idx + step)
 
             lambda0 = pow(10.0, lambda_idx)
             lambda1 = pow(10.0,lambda_idx + step)
@@ -206,19 +180,8 @@ cpdef calc_lambda_restricted(np.ndarray[np.float32_t, ndim=1] eigenVals,
                                             maxiter=maxiter,
                                             args=(eigenVals, Y, W),
                                             disp=False)
-                
-                # lambda_min = optimize.brenth(f=wrapper_likelihood_derivative1_restricted_lambda, 
-                #                             a=lambda0,
-                #                             b=lambda1,
-                #                             rtol=0.1,
-                #                             maxiter=maxiter,
-                #                             args=(eigenVals, Y, W),
-                #                             disp=False)
 
-                #lambda_min = brenth_custom(lambda0, lambda1, eigenVals, Y, W, xtol=2e-12, rtol=0.1, maxiter=maxiter)
                 lambda_min = newton(lambda_min, eigenVals, Y, W, precompute=True, lambda_min=lambda0, lambda_max=lambda1)
-
-                #roots.append(lambda_min)
 
                 precompute_dict = precompute_mat(lambda_min, eigenVals, W, Y, full=False)
 
@@ -227,10 +190,6 @@ cpdef calc_lambda_restricted(np.ndarray[np.float32_t, ndim=1] eigenVals,
                 if likelihood_lambda0 > best_likelihood:
                     best_likelihood = likelihood_lambda0
                     best_lambda = lambda_min
-
-                #likelihood_list.append(likelihood_restricted_lambda_overload(lambda_min, n, c+1, precompute_dict['yt_Pi_y'][c+1], precompute_dict['logdet_H'], precompute_dict['logdet_Wt_W'], precompute_dict['logdet_Wt_H_inv_W']))
-        
-        #return roots[np.argmax(likelihood_list)]
 
         return best_lambda
 
@@ -273,203 +232,6 @@ cpdef calc_lambda_restricted(np.ndarray[np.float32_t, ndim=1] eigenVals,
 
         
         return roots[np.argmax(likelihood_list)]
-
-# @cython.boundscheck(False) # turn off bounds-checking for entire function
-# @cython.wraparound(False)  # turn off negative index wrapping for entire function
-# @cython.cdivision(True)
-# cpdef precompute_mat(float lam,
-#                       np.ndarray[np.float32_t, ndim=1] eigenVals,
-#                       np.ndarray[np.float32_t, ndim=2] W,
-#                       np.ndarray[np.float32_t, ndim=2] Y,
-#                       bint full=True):
-
-#     cdef int i,j,k
-
-#     cdef int c = W.shape[1]
-
-#     cdef np.ndarray[np.float32_t, ndim=2] W_star = np.c_[W, Y]
-    
-#     # Note: W is now a matrix of shape (n, c+1), where n is the number of samples and c is the number of covariates
-#     # W[:,c+1] is the phenotype vector
-
-#     cdef np.ndarray[np.float32_t, ndim=1] Hi_eval = 1.0 / (lam*eigenVals + 1.0)
-
-#     cdef np.ndarray[np.float32_t, ndim=3] wjt_Pi_wk = np.zeros((W_star.shape[1], 
-#                                                                 c+1, 
-#                                                                 W_star.shape[1]),
-#                                                                 dtype=np.float32)
-
-#     cdef np.ndarray[np.float32_t, ndim=3] wjt_Pi_Pi_wk
-#     cdef np.ndarray[np.float32_t, ndim=3] wjt_Pi_Pi_Pi_wk
-
-#     cdef np.ndarray[np.float32_t, ndim=1] tr_Pi
-#     cdef np.ndarray[np.float32_t, ndim=1] tr_Pi_Pi
-
-#     cdef np.ndarray[np.uint32_t, ndim=1] indices = np.arange(c, dtype=np.uint32)
-
-#     cdef float logdet_Wt_H_inv_W #= 0.0 #np.linalg.slogdet(W.T @ (Hi_eval[:,np.newaxis] * W))[1]
-
-#     #start = time.time()
-
-#     # Pi Computations
-#     #start = time.time()
-#     for i in range(c+1): # Loop for Pi
-#         if i == 0:
-#             #wjt_Pi_wk[:,i,:] = W_star.T @ (Hi_eval[:,np.newaxis] * W_star)
-#             wjt_Pi_wk[:,:,:] = (W_star.T @ (Hi_eval[:,np.newaxis] * W_star))[:,np.newaxis,:]
-#         else:
-#             #wjt_Pi_wk[:,i,:] = wjt_Pi_wk[:,i-1,:] - np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) / max(wjt_Pi_wk[i-1,i-1,i-1], MIN_VAL)
-#             wjt_Pi_wk[:,i:,:] -= (np.outer(wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]))[:,np.newaxis,:]
-#         wjt_Pi_wk[i,i,i] = max(wjt_Pi_wk[i,i,i], MIN_VAL)
-   
-#     #print(f"Pi: {round(time.time() - start, 4)} s")
-
-#     #print(np.min(wjt_Pi_wk[indices,indices,indices]))
-
-#     logdet_Wt_H_inv_W = np.sum(np.log(wjt_Pi_wk[indices,indices,indices]))
-
-
-#     wjt_Pi_Pi_wk = np.zeros((W_star.shape[1], 
-#                             c+1, 
-#                             W_star.shape[1]), 
-#                             dtype=np.float32)
-
-#     tr_Pi = np.zeros((c+1,), dtype=np.float32)
-
-#     # Pi @ Pi Computations
-#     #start = time.time()
-#     for i in range(c+1): # Loop for Pi
-#         if i == 0:
-#             wjt_Pi_Pi_wk[:,:,:] = (W_star.T @ ((Hi_eval ** 2.0)[:,np.newaxis] * W_star))[:,np.newaxis,:]
-#         else:
-#             # wjt_Pi_Pi_wk[:,i:,:] +=  ((np.outer(wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_wk[:,i-1,i-1])) \
-#             #                                 - (transpose_sum(np.outer(wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]))))[:,np.newaxis,:]
-#             wjt_Pi_Pi_wk[:,i:,:] +=  ((np.outer(wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_wk[:,i-1,i-1])) \
-#                                             - np.outer(wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) \
-#                                             - np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1]))[:,np.newaxis,:]
-#         wjt_Pi_Pi_wk[i,i,i] = max(wjt_Pi_Pi_wk[i,i,i], MIN_VAL)
-
-#     #print(f"Pi @ Pi: {round(time.time() - start, 4)} s")
-
-#     #start = time.time()
-#     tr_Pi[0] = np.sum(Hi_eval)
-
-#     # Use np.cumsum to compute trace
-#     if c > 0:
-#         tr_Pi[1:] = - wjt_Pi_Pi_wk[indices,indices,indices] / wjt_Pi_wk[indices,indices,indices]
-#         tr_Pi = np.cumsum(tr_Pi)
-#     #print(f"Trace Pi: {round(time.time() - start, 4)} s")
-
-
-#     # If not performing full computation
-#     # Skips computations if we only need first derivative (meaning brent)
-#     if not full:
-#         #start = time.time()
-#         precompute_dict = {
-#                         'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c],
-#                         'wjt_Pi_Pi_wk'              : wjt_Pi_Pi_wk[:c, :, :c],
-#                         'yt_Pi_y'                   : wjt_Pi_wk[c, :, c].reshape(-1),
-#                         'yt_Pi_Pi_y'                : wjt_Pi_Pi_wk[c, :, c].reshape(-1),
-#                         'tr_Pi'                     : tr_Pi,
-#                         'logdet_Wt_W'               : np.linalg.slogdet(W.T @ W)[1],
-#                         'logdet_Wt_H_inv_W'         : logdet_Wt_H_inv_W,
-#                         'logdet_H'                  : np.sum(np.log(lam*eigenVals + 1.0)),
-#                         }
-#         #print(f"Precompute: {round(time.time() - start, 4)} s")
-
-#         return precompute_dict
-
-#     else:
-#         wjt_Pi_Pi_Pi_wk = np.zeros((W_star.shape[1], 
-#                                     c+1, 
-#                                     W_star.shape[1]), 
-#                                     dtype=np.float32)
-        
-#         tr_Pi_Pi = np.zeros((c+1,), dtype=np.float32)
-        
-#         # Pi @ Pi @ Pi Computations
-#         #start = time.time()
-#         for i in range(c+1): # Loop for Pi
-#             if i == 0:
-#                 #wjt_Pi_Pi_Pi_wk[:,i,:] = W_star.T @ ((Hi_eval ** 3.0)[:,np.newaxis] * W_star)
-#                 wjt_Pi_Pi_Pi_wk[:,i,:] = (W_star.T @ ((Hi_eval ** 3.0)[:,np.newaxis] * W_star))#[:,np.newaxis,:]
-#             else:
-#                 # wjt_Pi_Pi_Pi_wk[:,i,:] = wjt_Pi_Pi_Pi_wk[:,i-1,:] \
-#                 #                                     - np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) * ((wjt_Pi_Pi_wk[i-1,i-1,i-1] ** 2.0) / (wjt_Pi_wk[i-1,i-1,i-1] ** 3.0)) \
-#                 #                                     + ( - np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_Pi_wk[:,i-1,i-1]) \
-#                 #                                     - np.outer(wjt_Pi_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) \
-#                 #                                     - np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1])) / wjt_Pi_wk[i-1,i-1,i-1] \
-#                 #                                     + (np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) \
-#                 #                                     + np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1])) * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)) \
-#                 #                                     + np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) * (wjt_Pi_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0))
-#                 # wjt_Pi_Pi_Pi_wk[:,i,:] = wjt_Pi_Pi_Pi_wk[:,i-1,:] \
-#                 #                                     - np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) * ((wjt_Pi_Pi_wk[i-1,i-1,i-1] ** 2.0) / (wjt_Pi_wk[i-1,i-1,i-1] ** 3.0)) \
-#                 #                                     - (transpose_sum(np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_Pi_wk[:,i-1,i-1])) \
-#                 #                                     + np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1])) / wjt_Pi_wk[i-1,i-1,i-1] \
-#                 #                                     + transpose_sum(np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1])) * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)) \
-#                 #                                     + np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) * (wjt_Pi_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0))
-#                 # wjt_Pi_Pi_Pi_wk[:,i,:] = wjt_Pi_Pi_Pi_wk[:,i-1,:] \
-#                 #                                     - np.outer(wjt_Pi_wk[:,i-1,i-1] * ((wjt_Pi_Pi_wk[i-1,i-1,i-1] ** 2.0) / (wjt_Pi_wk[i-1,i-1,i-1] ** 3.0)), wjt_Pi_wk[:,i-1,i-1]) \
-#                 #                                     - transpose_sum(np.outer(wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_Pi_wk[:,i-1,i-1])) \
-#                 #                                     - np.outer(wjt_Pi_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) \
-#                 #                                     + transpose_sum(np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0))) \
-#                 #                                     + np.outer(wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_wk[:,i-1,i-1])
-#                 # wjt_Pi_Pi_Pi_wk[:,i,:] = wjt_Pi_Pi_Pi_wk[:,i-1,:] \
-#                 #                                     - np.outer(wjt_Pi_wk[:,i-1,i-1] * ((wjt_Pi_Pi_wk[i-1,i-1,i-1] ** 2.0) / (wjt_Pi_wk[i-1,i-1,i-1] ** 3.0)), wjt_Pi_wk[:,i-1,i-1]) \
-#                 #                                     - transpose_sum(np.outer(wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_Pi_wk[:,i-1,i-1])) \
-#                 #                                     - np.outer(wjt_Pi_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) \
-#                 #                                     + transpose_sum(np.outer(wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_Pi_wk[:,i-1,i-1])) \
-#                 #                                     + np.outer(wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_wk[:,i-1,i-1])
-#                 wjt_Pi_Pi_Pi_wk[:,i,:] = wjt_Pi_Pi_Pi_wk[:,i-1,:] \
-#                                                     - np.outer(wjt_Pi_wk[:,i-1,i-1] * ((wjt_Pi_Pi_wk[i-1,i-1,i-1] ** 2.0) / (wjt_Pi_wk[i-1,i-1,i-1] ** 3.0)), wjt_Pi_wk[:,i-1,i-1]) \
-#                                                     - np.outer(wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_Pi_wk[:,i-1,i-1]) \
-#                                                     - np.outer(wjt_Pi_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1]) \
-#                                                     - np.outer(wjt_Pi_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) \
-#                                                     + np.outer(wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_Pi_wk[:,i-1,i-1]) \
-#                                                     + np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0))) \
-#                                                     + np.outer(wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_wk[:,i-1,i-1])
-#             wjt_Pi_Pi_Pi_wk[i,i,i] = max(wjt_Pi_Pi_Pi_wk[i,i,i], MIN_VAL)
-
-#                 # wjt_Pi_Pi_Pi_wk[:,i:,:] += (- np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) * ((wjt_Pi_Pi_wk[i-1,i-1,i-1] ** 2.0) / (wjt_Pi_wk[i-1,i-1,i-1] ** 3.0)) \
-#                 #                                     + ( - np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_Pi_wk[:,i-1,i-1]) \
-#                 #                                     - np.outer(wjt_Pi_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) \
-#                 #                                     - np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1])) / wjt_Pi_wk[i-1,i-1,i-1] \
-#                 #                                     + (np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) \
-#                 #                                     + np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1])) * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)) \
-#                 #                                     + np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) * (wjt_Pi_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)))[:,np.newaxis,:]
-                
-#         #print(f"Pi @ Pi @ Pi: {round(time.time() - start, 4)} s")
-
-
-#         # Use np.cumsum to compute trace
-#         #start = time.time()
-#         tr_Pi_Pi[0] = np.sum(Hi_eval ** 2.0)
-
-#         if c > 0:
-#             tr_Pi_Pi[1:] = ((wjt_Pi_Pi_wk[indices,indices,indices] / wjt_Pi_wk[indices,indices,indices]) ** 2.0) \
-#                             - 2 * (wjt_Pi_Pi_Pi_wk[indices,indices,indices] / wjt_Pi_wk[indices,indices,indices])
-#             tr_Pi_Pi = np.cumsum(tr_Pi_Pi)
-#         #print(f"Trace Pi @ Pi: {round(time.time() - start, 4)} s")
-
-#         #start = time.time()
-#         precompute_dict = {
-#                             'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c],
-#                             'wjt_Pi_Pi_wk'              : wjt_Pi_Pi_wk[:c, :, :c],
-#                             'wjt_Pi_Pi_Pi_wk'           : wjt_Pi_Pi_Pi_wk[:c, :, :c],
-#                             'tr_Pi'                     : tr_Pi,
-#                             'tr_Pi_Pi'                  : tr_Pi_Pi,
-#                             'yt_Pi_y'                   : wjt_Pi_wk[c, :, c].reshape(-1),
-#                             'yt_Pi_Pi_y'                : wjt_Pi_Pi_wk[c, :, c].reshape(-1),
-#                             'yt_Pi_Pi_Pi_y'             : wjt_Pi_Pi_Pi_wk[c, :, c].reshape(-1),
-#                             'logdet_Wt_W'               : np.linalg.slogdet(W.T @ W)[1],
-#                             'logdet_Wt_H_inv_W'         : logdet_Wt_H_inv_W,
-#                             'logdet_H'                  : np.sum(np.log(lam*eigenVals + 1.0)),
-#                             }
-#         #print(f"Precompute: {round(time.time() - start, 4)} s")
-        
-#         #print(f"Runtime: {round(time.time() - start, 4)} s")
-
-#         return precompute_dict
 
 @cython.boundscheck(False) # turn off bounds-checking for entire function
 @cython.wraparound(False)  # turn off negative index wrapping for entire function
@@ -514,34 +276,14 @@ cpdef precompute_mat_test(float lam,
     for i in range(c+1): # Loop for Pi
         if i == 0:
             wjt_Pi_wk[:,i,:] = np.dot(W_star.T, Hi_eval[:,np.newaxis] * W_star)
-            #wjt_Pi_wk[:,:,:] = (W_star.T @ (Hi_eval[:,np.newaxis] * W_star))[:,np.newaxis,:]
-            # for j in range(W_star.shape[1]):
-            #     for k in range(W_star.shape[1]):
-            #         wjt_Pi_wk[j,i,k] = np.sum(W_star[:,k] * Hi_eval * W_star[:,j])
         elif wjt_Pi_wk[i-1,i-1,i-1] != 0.0:
-            #wjt_Pi_wk[:,i,:] = wjt_Pi_wk[:,i-1,:] - np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) / wjt_Pi_wk[i-1,i-1,i-1]
             wjt_Pi_wk[:,i,:] = wjt_Pi_wk[:,i-1,:] - np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) / wjt_Pi_wk[i-1,i-1,i-1]
             logdet_Wt_H_inv_W += np.log(wjt_Pi_wk[i-1,i-1,i-1])
-            #wjt_Pi_wk[:,i:,:] -= (np.outer(wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]))[:,np.newaxis,:]
-            # for j in range(W_star.shape[1]):
-            #     for k in range(W_star.shape[1]):
-            #         wjt_Pi_wk[j,i,k] = wjt_Pi_wk[j,i-1,k] - (wjt_Pi_wk[j,i-1,i-1] * wjt_Pi_wk[i-1,i-1,k]) / wjt_Pi_wk[i-1,i-1,i-1]
         else:
             wjt_Pi_wk[:,i,:] = wjt_Pi_wk[:,i-1,:]
             logdet_Wt_H_inv_W += np.log(wjt_Pi_wk[i-1,i-1,i-1])
         
         wjt_Pi_wk[i,i,i] = max(wjt_Pi_wk[i,i,i], MIN_VAL)
-            
-
-        #wjt_Pi_wk[i,i,i] = max(wjt_Pi_wk[i,i,i], MIN_VAL)
-   
-    #print(f"Pi: {round(time.time() - start, 4)} s")
-
-    #print(np.min(wjt_Pi_wk[indices,indices,indices]))
-
-    #logdet_Wt_H_inv_W = float(np.sum(np.log(wjt_Pi_wk[indices,indices,indices])))
-    #logdet_Wt_H_inv_W = float(np.linalg.slogdet(W.T @ (Hi_eval[:,np.newaxis] * W))[1])
-
 
     wjt_Pi_Pi_wk = np.zeros((W_star.shape[1], 
                             c+1, 
@@ -551,36 +293,28 @@ cpdef precompute_mat_test(float lam,
     tr_Pi = np.zeros((c+1,), dtype=np.float64)
 
     # Pi @ Pi Computations
-    #start = time.time()
     for i in range(c+1): # Loop for Pi
         if i == 0:
             wjt_Pi_Pi_wk[:,i,:] = np.dot(W_star.T, (Hi_eval ** 2.0)[:,np.newaxis] * W_star)
         else:
-            # wjt_Pi_Pi_wk[:,i:,:] +=  ((np.outer(wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_wk[:,i-1,i-1])) \
-            #                                 - (transpose_sum(np.outer(wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]))))[:,np.newaxis,:]
             wjt_Pi_Pi_wk[:,i,:] = wjt_Pi_Pi_wk[:,i-1,:] + (np.outer(wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_wk[:,i-1,i-1])) \
                                             - np.outer(wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) \
                                             - np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1])
         wjt_Pi_Pi_wk[i,i,i] = max(wjt_Pi_Pi_wk[i,i,i], MIN_VAL)
 
-    #print(f"Pi @ Pi: {round(time.time() - start, 4)} s")
-
-    #start = time.time()
+    
     tr_Pi[0] = np.sum(Hi_eval)
 
     # Use np.cumsum to compute trace
     if c > 0:
         tr_Pi[1:] = - wjt_Pi_Pi_wk[indices,indices,indices] / wjt_Pi_wk[indices,indices,indices]
         tr_Pi = np.cumsum(tr_Pi)
-    #print(f"Trace Pi: {round(time.time() - start, 4)} s")
 
 
     # If not performing full computation
     # Skips computations if we only need first derivative (meaning brent)
     if not full:
-        #start = time.time()
         precompute_dict = {
-                        #'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c].astype(np.float32),
                         'wjt_Pi_wk'                 : wjt_Pi_wk[:, :, :].astype(np.float32),
                         'wjt_Pi_Pi_wk'              : wjt_Pi_Pi_wk[:c, :, :c].astype(np.float32),
                         'yt_Pi_y'                   : wjt_Pi_wk[c, :, c].reshape(-1).astype(np.float32),
@@ -590,7 +324,6 @@ cpdef precompute_mat_test(float lam,
                         'logdet_Wt_H_inv_W'         : float(logdet_Wt_H_inv_W),
                         'logdet_H'                  : float(np.sum(np.log(lam*eigenVals + 1.0))),
                         }
-        #print(f"Precompute: {round(time.time() - start, 4)} s")
 
         return precompute_dict
 
@@ -603,20 +336,10 @@ cpdef precompute_mat_test(float lam,
         tr_Pi_Pi = np.zeros((c+1,), dtype=np.float64)
         
         # Pi @ Pi @ Pi Computations
-        #start = time.time()
         for i in range(c+1): # Loop for Pi
             if i == 0:
-                #wjt_Pi_Pi_Pi_wk[:,i,:] = W_star.T @ ((Hi_eval ** 3.0)[:,np.newaxis] * W_star)
                 wjt_Pi_Pi_Pi_wk[:,i,:] = np.dot(W_star.T, (Hi_eval ** 3.0)[:,np.newaxis] * W_star)
             else:
-                # wjt_Pi_Pi_Pi_wk[:,i,:] = wjt_Pi_Pi_Pi_wk[:,i-1,:] \
-                #                                     - np.outer(wjt_Pi_wk[:,i-1,i-1] * ((wjt_Pi_Pi_wk[i-1,i-1,i-1] ** 2.0) / (wjt_Pi_wk[i-1,i-1,i-1] ** 3.0)), wjt_Pi_wk[:,i-1,i-1]) \
-                #                                     - np.outer(wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_Pi_wk[:,i-1,i-1]) \
-                #                                     - np.outer(wjt_Pi_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1]) \
-                #                                     - np.outer(wjt_Pi_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) \
-                #                                     + np.outer(wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_Pi_wk[:,i-1,i-1]) \
-                #                                     + np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0))) \
-                #                                     + np.outer(wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_wk[:,i-1,i-1])
                 wjt_Pi_Pi_Pi_wk[:,i,:] = wjt_Pi_Pi_Pi_wk[:,i-1,:] \
                                                     + np.outer(wjt_Pi_wk[:,i-1,i-1] * ((wjt_Pi_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)) - ((wjt_Pi_Pi_wk[i-1,i-1,i-1] ** 2.0) / (wjt_Pi_wk[i-1,i-1,i-1] ** 3.0))), wjt_Pi_wk[:,i-1,i-1]) \
                                                     - np.outer(wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_Pi_wk[:,i-1,i-1]) \
@@ -627,22 +350,15 @@ cpdef precompute_mat_test(float lam,
                 
             wjt_Pi_Pi_Pi_wk[i,i,i] = max(wjt_Pi_Pi_Pi_wk[i,i,i], MIN_VAL)
 
-        #print(f"Pi @ Pi @ Pi: {round(time.time() - start, 4)} s")
-
-
         # Use np.cumsum to compute trace
-        #start = time.time()
         tr_Pi_Pi[0] = np.sum(Hi_eval ** 2.0)
 
         if c > 0:
             tr_Pi_Pi[1:] = ((wjt_Pi_Pi_wk[indices,indices,indices] / wjt_Pi_wk[indices,indices,indices]) ** 2.0) \
                             - 2 * (wjt_Pi_Pi_Pi_wk[indices,indices,indices] / wjt_Pi_wk[indices,indices,indices])
             tr_Pi_Pi = np.cumsum(tr_Pi_Pi)
-        #print(f"Trace Pi @ Pi: {round(time.time() - start, 4)} s")
 
-        #start = time.time()
         precompute_dict = {
-                            #'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c].astype(np.float32),
                             'wjt_Pi_wk'                 : wjt_Pi_wk[:, :, :].astype(np.float32),
                             'wjt_Pi_Pi_wk'              : wjt_Pi_Pi_wk[:c, :, :c].astype(np.float32),
                             'wjt_Pi_Pi_Pi_wk'           : wjt_Pi_Pi_Pi_wk[:c, :, :c].astype(np.float32),
@@ -655,9 +371,6 @@ cpdef precompute_mat_test(float lam,
                             'logdet_Wt_H_inv_W'         : float(logdet_Wt_H_inv_W),
                             'logdet_H'                  : float(np.sum(np.log(lam*eigenVals + 1.0))),
                             }
-        #print(f"Precompute: {round(time.time() - start, 4)} s")
-        
-        #print(f"Runtime: {round(time.time() - start, 4)} s")
 
         return precompute_dict
 
@@ -669,19 +382,17 @@ cpdef precompute_mat_optimized(float lam,
                       np.ndarray[np.float32_t, ndim=2] W,
                       np.ndarray[np.float32_t, ndim=2] Y,
                       bint full=True):
-
+    
     cdef int i,j,k
 
     cdef int c = W.shape[1]
 
-    #cdef np.ndarray[np.float64_t, ndim=2] W_star = np.c_[W, Y].astype(np.float64)
     cdef np.ndarray[np.float64_t, ndim=2] W_star = np.asfortranarray(np.c_[W, Y].astype(np.float64))
     
     # Note: W is now a matrix of shape (n, c+1), where n is the number of samples and c is the number of covariates
     # W[:,c+1] is the phenotype vector
 
     cdef np.ndarray[np.float64_t, ndim=1] Hi_eval = 1.0 / (np.float64(lam)*eigenVals.astype(np.float64) + 1.0)
-    #print(lam, Hi_eval[:5])
 
     cdef np.ndarray[np.float64_t, ndim=3] wjt_Pi_wk = np.zeros((W_star.shape[1], 
                                                                 c+1, 
@@ -696,33 +407,20 @@ cpdef precompute_mat_optimized(float lam,
 
     cdef np.ndarray[np.uint32_t, ndim=1] indices = np.arange(c, dtype=np.uint32)
 
-    cdef float logdet_Wt_H_inv_W = 0.0 #np.linalg.slogdet(W.T @ (Hi_eval[:,np.newaxis] * W))[1]
+    cdef float logdet_Wt_H_inv_W = 0.0
 
     cdef np.ndarray[np.float64_t, ndim=2] temp
     cdef np.ndarray[cython.long, ndim=1] rows, cols
     rows, cols = np.tril_indices(c+1, -1)
 
-    #start = time.time()
-
     # Pi Computations
-    #start = time.time()
     for i in range(c+1): # Loop for Pi
         if i == 0:
-            #wjt_Pi_wk[:,i,:] = np.dot(W_star.T, Hi_eval[:,np.newaxis] * W_star)
             temp = blas.dsyrk(1.0, np.sqrt(Hi_eval[:,np.newaxis]) * W_star, trans=1)
             temp[rows, cols] = temp[cols, rows]
 
             wjt_Pi_wk[:,i,:] = temp
-            #wjt_Pi_wk[:,:,:] = (W_star.T @ (Hi_eval[:,np.newaxis] * W_star))[:,np.newaxis,:]
-            # for j in range(W_star.shape[1]):
-            #     for k in range(W_star.shape[1]):
-            #         wjt_Pi_wk[j,i,k] = np.sum(W_star[:,k] * Hi_eval * W_star[:,j])
         elif wjt_Pi_wk[i-1,i-1,i-1] != 0.0:
-            #wjt_Pi_wk[:,i,:] = wjt_Pi_wk[:,i-1,:] - np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) / wjt_Pi_wk[i-1,i-1,i-1]
-            # TODO: Fix the optimization here
-            #wjt_Pi_wk[:,i,:] = wjt_Pi_wk[:,i-1,:] - np.outer(wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_wk[:,i-1,i-1])
-            #temp = wjt_Pi_wk[:,i-1,:] + blas.dsyr(-1.0 / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_wk[:,i-1,i-1])
-            #temp = blas.dsyr(-1.0 / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_wk[:,i-1,i-1], a=wjt_Pi_wk[:,i-1,:])
             temp[:,:] = blas.dsyr(-1.0 / temp[i-1,i-1], temp[:,i-1], a=temp)
 
             temp[rows, cols] = temp[cols, rows]
@@ -730,25 +428,11 @@ cpdef precompute_mat_optimized(float lam,
             wjt_Pi_wk[:,i,:] = temp
 
             logdet_Wt_H_inv_W += np.log(wjt_Pi_wk[i-1,i-1,i-1])
-            #wjt_Pi_wk[:,i:,:] -= (np.outer(wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]))[:,np.newaxis,:]
-            # for j in range(W_star.shape[1]):
-            #     for k in range(W_star.shape[1]):
-            #         wjt_Pi_wk[j,i,k] = wjt_Pi_wk[j,i-1,k] - (wjt_Pi_wk[j,i-1,i-1] * wjt_Pi_wk[i-1,i-1,k]) / wjt_Pi_wk[i-1,i-1,i-1]
         else:
             wjt_Pi_wk[:,i,:] = wjt_Pi_wk[:,i-1,:]
             logdet_Wt_H_inv_W += np.log(wjt_Pi_wk[i-1,i-1,i-1])
         
         wjt_Pi_wk[i,i,i] = max(wjt_Pi_wk[i,i,i], MIN_VAL)
-
-        #wjt_Pi_wk[i,i,i] = max(wjt_Pi_wk[i,i,i], MIN_VAL)
-   
-    #print(f"Pi: {round(time.time() - start, 4)} s")
-
-    #print(np.min(wjt_Pi_wk[indices,indices,indices]))
-
-    #logdet_Wt_H_inv_W = float(np.sum(np.log(wjt_Pi_wk[indices,indices,indices])))
-    #logdet_Wt_H_inv_W = float(np.linalg.slogdet(W.T @ (Hi_eval[:,np.newaxis] * W))[1])
-
 
     wjt_Pi_Pi_wk = np.zeros((W_star.shape[1], 
                             c+1, 
@@ -758,16 +442,11 @@ cpdef precompute_mat_optimized(float lam,
     tr_Pi = np.zeros((c+1,), dtype=np.float64)
 
     # Pi @ Pi Computations
-    #start = time.time()
     for i in range(c+1): # Loop for Pi
         if i == 0:
             wjt_Pi_Pi_wk[:,i,:] = np.dot(W_star.T, (Hi_eval ** 2.0)[:,np.newaxis] * W_star)
             tr_Pi[0] = np.sum(Hi_eval)
         else:
-            # wjt_Pi_Pi_wk[:,i,:] = wjt_Pi_Pi_wk[:,i-1,:] \
-            #                         + blas.dger((wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) \
-            #                         - blas.dger(1.0 / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) \
-            #                         - blas.dger(1.0 / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1])
             temp = wjt_Pi_Pi_wk[:,i-1,:] \
                     + blas.dsyr((wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_wk[:,i-1,i-1]) \
                     + blas.dsyr2(- 1.0 / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_wk[:,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1])
@@ -776,34 +455,23 @@ cpdef precompute_mat_optimized(float lam,
             wjt_Pi_Pi_wk[:,i,:] = temp
             
             tr_Pi[i] = tr_Pi[i-1] - wjt_Pi_Pi_wk[i-1,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1]
-            # wjt_Pi_Pi_wk[:,i,:] = wjt_Pi_Pi_wk[:,i-1,:] + (np.outer(wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_wk[:,i-1,i-1])) \
-            #                                 - np.outer(wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) \
-            #                                 - np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1])
+            
         wjt_Pi_Pi_wk[i,i,i] = max(wjt_Pi_Pi_wk[i,i,i], MIN_VAL)
-
-    #print(f"Pi @ Pi: {round(time.time() - start, 4)} s")
-
-    #start = time.time()
-    
-    #print(f"Trace Pi: {round(time.time() - start, 4)} s")
 
 
     # If not performing full computation
     # Skips computations if we only need first derivative (meaning brent)
     if not full:
-        #start = time.time()
         precompute_dict = {
-                        #'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c].astype(np.float32),
                         'wjt_Pi_wk'                 : wjt_Pi_wk[:, :, :].astype(np.float32),
                         'wjt_Pi_Pi_wk'              : wjt_Pi_Pi_wk[:c, :, :c].astype(np.float32),
                         'yt_Pi_y'                   : wjt_Pi_wk[c, :, c].reshape(-1).astype(np.float32),
                         'yt_Pi_Pi_y'                : wjt_Pi_Pi_wk[c, :, c].reshape(-1).astype(np.float32),
                         'tr_Pi'                     : tr_Pi.astype(np.float32),
-                        'logdet_Wt_W'               : 0.0, #float(np.linalg.slogdet(W.T @ W)[1]),
+                        'logdet_Wt_W'               : 0.0,
                         'logdet_Wt_H_inv_W'         : float(logdet_Wt_H_inv_W),
                         'logdet_H'                  : float(np.sum(np.log(lam*eigenVals + 1.0))),
                         }
-        #print(f"Precompute: {round(time.time() - start, 4)} s")
 
         return precompute_dict
 
@@ -816,10 +484,8 @@ cpdef precompute_mat_optimized(float lam,
         tr_Pi_Pi = np.zeros((c+1,), dtype=np.float64)
         
         # Pi @ Pi @ Pi Computations
-        #start = time.time()
         for i in range(c+1): # Loop for Pi
             if i == 0:
-                #wjt_Pi_Pi_Pi_wk[:,i,:] = W_star.T @ ((Hi_eval ** 3.0)[:,np.newaxis] * W_star)
                 wjt_Pi_Pi_Pi_wk[:,i,:] = np.dot(W_star.T, (Hi_eval ** 3.0)[:,np.newaxis] * W_star)
                 tr_Pi_Pi[0] = np.sum(Hi_eval ** 2.0)
             else:
@@ -835,28 +501,12 @@ cpdef precompute_mat_optimized(float lam,
                 tr_Pi_Pi[i] = tr_Pi_Pi[i-1] + ((wjt_Pi_Pi_wk[i-1,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1]) ** 2.0) \
                                     - 2 * (wjt_Pi_Pi_Pi_wk[i-1,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1])
 
-                # wjt_Pi_Pi_Pi_wk[:,i,:] = wjt_Pi_Pi_Pi_wk[:,i-1,:] \
-                #                                     - np.outer(wjt_Pi_wk[:,i-1,i-1] * ((wjt_Pi_Pi_wk[i-1,i-1,i-1] ** 2.0) / (wjt_Pi_wk[i-1,i-1,i-1] ** 3.0)), wjt_Pi_wk[:,i-1,i-1]) \
-                #                                     - np.outer(wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_Pi_wk[:,i-1,i-1]) \
-                #                                     - np.outer(wjt_Pi_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1]) \
-                #                                     - np.outer(wjt_Pi_Pi_wk[:,i-1,i-1] / wjt_Pi_wk[i-1,i-1,i-1], wjt_Pi_Pi_wk[:,i-1,i-1]) \
-                #                                     + np.outer(wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_Pi_wk[:,i-1,i-1]) \
-                #                                     + np.outer(wjt_Pi_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0))) \
-                #                                     + np.outer(wjt_Pi_wk[:,i-1,i-1] * (wjt_Pi_Pi_Pi_wk[i-1,i-1,i-1] / (wjt_Pi_wk[i-1,i-1,i-1] ** 2.0)), wjt_Pi_wk[:,i-1,i-1])
-
             wjt_Pi_Pi_Pi_wk[i,i,i] = max(wjt_Pi_Pi_Pi_wk[i,i,i], MIN_VAL)
-
-        #print(f"Pi @ Pi @ Pi: {round(time.time() - start, 4)} s")
 
 
         # Use np.cumsum to compute trace
-        #start = time.time()
 
-        #print(f"Trace Pi @ Pi: {round(time.time() - start, 4)} s")
-
-        #start = time.time()
         precompute_dict = {
-                            #'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c].astype(np.float32),
                             'wjt_Pi_wk'                 : wjt_Pi_wk[:, :, :].astype(np.float32),
                             'wjt_Pi_Pi_wk'              : wjt_Pi_Pi_wk[:c, :, :c].astype(np.float32),
                             'wjt_Pi_Pi_Pi_wk'           : wjt_Pi_Pi_Pi_wk[:c, :, :c].astype(np.float32),
@@ -865,13 +515,10 @@ cpdef precompute_mat_optimized(float lam,
                             'yt_Pi_y'                   : wjt_Pi_wk[c, :, c].reshape(-1).astype(np.float32),
                             'yt_Pi_Pi_y'                : wjt_Pi_Pi_wk[c, :, c].reshape(-1).astype(np.float32),
                             'yt_Pi_Pi_Pi_y'             : wjt_Pi_Pi_Pi_wk[c, :, c].reshape(-1).astype(np.float32),
-                            'logdet_Wt_W'               : 0.0, #float(np.linalg.slogdet(W.T @ W)[1]),
+                            'logdet_Wt_W'               : 0.0,
                             'logdet_Wt_H_inv_W'         : float(logdet_Wt_H_inv_W),
                             'logdet_H'                  : float(np.sum(np.log(lam*eigenVals + 1.0))),
                             }
-        #print(f"Precompute: {round(time.time() - start, 4)} s")
-        
-        #print(f"Runtime: {round(time.time() - start, 4)} s")
 
         return precompute_dict
 
@@ -888,15 +535,12 @@ cpdef precompute_mat_flipped(float lam,
     cdef int i,j,k
 
     cdef int c = W.shape[1]
-
-    #cdef np.ndarray[np.float64_t, ndim=2] W_star = np.c_[W, Y].astype(np.float64)
     cdef np.ndarray[np.float64_t, ndim=2] W_star = np.asfortranarray(np.c_[W, Y].astype(np.float64))
     
     # Note: W is now a matrix of shape (n, c+1), where n is the number of samples and c is the number of covariates
     # W[:,c+1] is the phenotype vector
 
     cdef np.ndarray[np.float64_t, ndim=1] Hi_eval = 1.0 / (np.float64(lam)*eigenVals.astype(np.float64) + 1.0)
-    #print(lam, Hi_eval[:5])
 
     cdef np.ndarray[np.float64_t, ndim=3] wjt_Pi_wk = np.zeros((c+1, 
                                                                 c+1, 
@@ -912,13 +556,11 @@ cpdef precompute_mat_flipped(float lam,
 
     cdef np.ndarray[np.uint32_t, ndim=1] indices = np.arange(c, dtype=np.uint32)
 
-    cdef float logdet_Wt_H_inv_W = 0.0 #np.linalg.slogdet(W.T @ (Hi_eval[:,np.newaxis] * W))[1]
+    cdef float logdet_Wt_H_inv_W = 0.0
 
     cdef np.ndarray[np.float64_t, ndim=2] temp_Pi, temp_PiPi, temp_PiPiPi
     cdef np.ndarray[cython.long, ndim=1] rows, cols
     rows, cols = np.tril_indices(c+1, -1)
-
-    #start = time.time()
 
     wjt_Pi_Pi_wk = np.zeros((c+1, 
                             c+1, 
@@ -931,19 +573,10 @@ cpdef precompute_mat_flipped(float lam,
     temp_Pi = np.zeros((c+1, c+1), dtype=np.float64, order='F')
     temp_PiPi = np.zeros((c+1, c+1), dtype=np.float64, order='F')            
         
-
-    #print(f"Pi @ Pi: {round(time.time() - start, 4)} s")
-
-    #start = time.time()
-    
-    #print(f"Trace Pi: {round(time.time() - start, 4)} s")
-
-
     # If not performing full computation
     # Skips computations if we only need first derivative (meaning brent)
     if not full:
         # Pi Computations
-        #start = time.time()
         for i in range(c+1): # Loop for Pi
             if i == 0:
                 temp_Pi[:,:] = blas.dsyrk(1.0, np.sqrt(Hi_eval[:,np.newaxis]) * W_star, trans=1)
@@ -976,19 +609,17 @@ cpdef precompute_mat_flipped(float lam,
                 temp_Pi[i,i] = max(temp_Pi[i,i], MIN_VAL)
 
                 wjt_Pi_wk[:,i,:] = temp_Pi
-        #start = time.time()
+        
         precompute_dict = {
-                        #'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c].astype(np.float32),
                         'wjt_Pi_wk'                 : wjt_Pi_wk[:, :, :].astype(np.float32),
                         'wjt_Pi_Pi_wk'              : wjt_Pi_Pi_wk[:c, :, :c].astype(np.float32),
                         'yt_Pi_y'                   : wjt_Pi_wk[c, :, c].reshape(-1).astype(np.float32),
                         'yt_Pi_Pi_y'                : wjt_Pi_Pi_wk[c, :, c].reshape(-1).astype(np.float32),
                         'tr_Pi'                     : tr_Pi.astype(np.float32),
-                        'logdet_Wt_W'               : 0.0, #float(np.linalg.slogdet(W.T @ W)[1]),
+                        'logdet_Wt_W'               : 0.0,
                         'logdet_Wt_H_inv_W'         : float(logdet_Wt_H_inv_W),
                         'logdet_H'                  : float(np.sum(np.log(lam*eigenVals + 1.0))),
                         }
-        #print(f"Precompute: {round(time.time() - start, 4)} s")
 
         return precompute_dict
 
@@ -1004,7 +635,6 @@ cpdef precompute_mat_flipped(float lam,
         temp_PiPiPi = np.zeros((c+1, c+1), dtype=np.float64, order='F')
 
         # Pi Computations
-        #start = time.time()
         for i in range(c+1): # Loop for Pi
             if i == 0:
                 temp_Pi[:,:] = blas.dsyrk(1.0, np.sqrt(Hi_eval[:,np.newaxis]) * W_star, trans=1)
@@ -1056,19 +686,7 @@ cpdef precompute_mat_flipped(float lam,
                 
                 wjt_Pi_wk[:,i,:] = temp_Pi
 
-            
-
-        #print(f"Pi @ Pi @ Pi: {round(time.time() - start, 4)} s")
-
-
-        # Use np.cumsum to compute trace
-        #start = time.time()
-
-        #print(f"Trace Pi @ Pi: {round(time.time() - start, 4)} s")
-
-        #start = time.time()
         precompute_dict = {
-                            #'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c].astype(np.float32),
                             'wjt_Pi_wk'                 : wjt_Pi_wk[:, :, :].astype(np.float32),
                             'wjt_Pi_Pi_wk'              : wjt_Pi_Pi_wk[:c, :, :c].astype(np.float32),
                             'wjt_Pi_Pi_Pi_wk'           : wjt_Pi_Pi_Pi_wk[:c, :, :c].astype(np.float32),
@@ -1077,13 +695,10 @@ cpdef precompute_mat_flipped(float lam,
                             'yt_Pi_y'                   : wjt_Pi_wk[c, :, c].reshape(-1).astype(np.float32),
                             'yt_Pi_Pi_y'                : wjt_Pi_Pi_wk[c, :, c].reshape(-1).astype(np.float32),
                             'yt_Pi_Pi_Pi_y'             : wjt_Pi_Pi_Pi_wk[c, :, c].reshape(-1).astype(np.float32),
-                            'logdet_Wt_W'               : 0.0, #float(np.linalg.slogdet(W.T @ W)[1]),
+                            'logdet_Wt_W'               : 0.0,
                             'logdet_Wt_H_inv_W'         : float(logdet_Wt_H_inv_W),
                             'logdet_H'                  : float(np.sum(np.log(lam*eigenVals + 1.0))),
                             }
-        #print(f"Precompute: {round(time.time() - start, 4)} s")
-        
-        #print(f"Runtime: {round(time.time() - start, 4)} s")
 
         return precompute_dict
 
@@ -1101,14 +716,12 @@ cpdef precompute_mat_modified(float lam,
 
     cdef int c = W.shape[1]
 
-    #cdef np.ndarray[np.float64_t, ndim=2] W_star = np.c_[W, Y].astype(np.float64)
     cdef np.ndarray[np.float64_t, ndim=2] W_star = np.asfortranarray(np.c_[W, Y].astype(np.float64))
     
     # Note: W is now a matrix of shape (n, c+1), where n is the number of samples and c is the number of covariates
     # W[:,c+1] is the phenotype vector
 
     cdef np.ndarray[np.float64_t, ndim=1] Hi_eval = np.asfortranarray(1.0 / (np.float64(lam)*eigenVals.astype(np.float64) + 1.0))
-    #print(lam, Hi_eval[:5])
 
     cdef np.ndarray[np.float64_t, ndim=3] wjt_Pi_wk = np.zeros((c+1, 
                                                                 c+1, 
@@ -1122,11 +735,9 @@ cpdef precompute_mat_modified(float lam,
     cdef np.ndarray[np.float64_t, ndim=1] tr_Pi
     cdef np.ndarray[np.float64_t, ndim=1] tr_Pi_Pi
 
-    cdef float logdet_Wt_H_inv_W = 0.0 #np.linalg.slogdet(W.T @ (Hi_eval[:,np.newaxis] * W))[1]
+    cdef float logdet_Wt_H_inv_W = 0.0
 
     cdef np.ndarray[np.float64_t, ndim=2] temp_Pi, temp_PiPi, temp_PiPiPi
-
-    #start = time.time()
 
     wjt_Pi_Pi_wk = np.zeros((c+1, 
                             c+1, 
@@ -1138,20 +749,12 @@ cpdef precompute_mat_modified(float lam,
 
     temp_Pi = np.zeros((c+1, c+1), dtype=np.float64, order='F')
     temp_PiPi = np.zeros((c+1, c+1), dtype=np.float64, order='F')            
-        
-
-    #print(f"Pi @ Pi: {round(time.time() - start, 4)} s")
-
-    #start = time.time()
-    
-    #print(f"Trace Pi: {round(time.time() - start, 4)} s")
 
 
     # If not performing full computation
     # Skips computations if we only need first derivative (meaning brent)
     if not full:
         # Pi Computations
-        #start = time.time()
         for i in range(c+1): # Loop for Pi
             if i == 0:
                 temp_Pi[:,:] = blas.dsyrk(1.0, np.sqrt(Hi_eval[:,np.newaxis]) * W_star, trans=1, lower=1)
@@ -1180,20 +783,16 @@ cpdef precompute_mat_modified(float lam,
                 temp_Pi[i,i] = max(temp_Pi[i,i], MIN_VAL)
 
                 wjt_Pi_wk[:,i,:] = temp_Pi
-        #start = time.time()
         precompute_dict = {
-                        #'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c].astype(np.float32),
                         'wjt_Pi_wk'                 : wjt_Pi_wk[:, :, :].astype(np.float32),
                         'wjt_Pi_Pi_wk'              : wjt_Pi_Pi_wk[:c, :, :c].astype(np.float32),
                         'yt_Pi_y'                   : wjt_Pi_wk[c, :, c].astype(np.float32),
                         'yt_Pi_Pi_y'                : wjt_Pi_Pi_wk[c, :, c].astype(np.float32),
                         'tr_Pi'                     : tr_Pi.astype(np.float32),
-                        'logdet_Wt_W'               : 0.0, #float(np.linalg.slogdet(W.T @ W)[1]),
+                        'logdet_Wt_W'               : 0.0,
                         'logdet_Wt_H_inv_W'         : float(logdet_Wt_H_inv_W),
                         'logdet_H'                  : float(np.log(lam*eigenVals + 1.0).sum()),
-                        #'logdet_H'                  : float(np.sum(np.log(lam*eigenVals + 1.0))),
                         }
-        #print(f"Precompute: {round(time.time() - start, 4)} s")
 
         return precompute_dict
 
@@ -1209,7 +808,6 @@ cpdef precompute_mat_modified(float lam,
         temp_PiPiPi = np.zeros((c+1, c+1), dtype=np.float64, order='F')
 
         # Pi Computations
-        #start = time.time()
         for i in range(c+1): # Loop for Pi
             if i == 0:
                 temp_Pi[:,:] = blas.dsyrk(1.0, np.sqrt(Hi_eval[:,np.newaxis]) * W_star, trans=1, lower=1)
@@ -1260,18 +858,7 @@ cpdef precompute_mat_modified(float lam,
                 wjt_Pi_wk[:,i,:] = temp_Pi
 
             
-
-        #print(f"Pi @ Pi @ Pi: {round(time.time() - start, 4)} s")
-
-
-        # Use np.cumsum to compute trace
-        #start = time.time()
-
-        #print(f"Trace Pi @ Pi: {round(time.time() - start, 4)} s")
-
-        #start = time.time()
         precompute_dict = {
-                            #'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c].astype(np.float32),
                             'wjt_Pi_wk'                 : wjt_Pi_wk[:, :, :].astype(np.float32),
                             'wjt_Pi_Pi_wk'              : wjt_Pi_Pi_wk[:c, :, :c].astype(np.float32),
                             'wjt_Pi_Pi_Pi_wk'           : wjt_Pi_Pi_Pi_wk[:c, :, :c].astype(np.float32),
@@ -1280,14 +867,10 @@ cpdef precompute_mat_modified(float lam,
                             'yt_Pi_y'                   : wjt_Pi_wk[c, :, c].astype(np.float32),
                             'yt_Pi_Pi_y'                : wjt_Pi_Pi_wk[c, :, c].astype(np.float32),
                             'yt_Pi_Pi_Pi_y'             : wjt_Pi_Pi_Pi_wk[c, :, c].reshape(-1).astype(np.float32),
-                            'logdet_Wt_W'               : 0.0, #float(np.linalg.slogdet(W.T @ W)[1]),
+                            'logdet_Wt_W'               : 0.0,
                             'logdet_Wt_H_inv_W'         : float(logdet_Wt_H_inv_W),
                             'logdet_H'                  : float(np.log(lam*eigenVals + 1.0).sum()),
-                            #'logdet_H'                  : float(np.sum(np.log(lam*eigenVals + 1.0))),
                             }
-        #print(f"Precompute: {round(time.time() - start, 4)} s")
-        
-        #print(f"Runtime: {round(time.time() - start, 4)} s")
 
         return precompute_dict
 
@@ -1318,7 +901,6 @@ cpdef precompute_mat(float lam,
     # W[:,c+1] is the phenotype vector
 
     cdef np.ndarray[np.float64_t, ndim=1] Hi_eval = np.asfortranarray(1.0 / (lam*eigenVals + 1.0), dtype=np.float64)
-    #print(lam, Hi_eval[:5])
 
     cdef np.ndarray[np.float64_t, ndim=3] wjt_Pi_wk = np.empty((c+1, 
                                                                 c+1, 
@@ -1332,11 +914,9 @@ cpdef precompute_mat(float lam,
     cdef np.ndarray[np.float64_t, ndim=1] tr_Pi
     cdef np.ndarray[np.float64_t, ndim=1] tr_Pi_Pi
 
-    cdef float logdet_Wt_H_inv_W = 0.0 #np.linalg.slogdet(W.T @ (Hi_eval[:,np.newaxis] * W))[1]
+    cdef float logdet_Wt_H_inv_W = 0.0
 
     cdef np.ndarray[np.float64_t, ndim=2] temp_Pi, temp_PiPi, temp_PiPiPi
-
-    #start = time.time()
 
     wjt_Pi_Pi_wk = np.empty((c+1, 
                             c+1, 
@@ -1345,25 +925,14 @@ cpdef precompute_mat(float lam,
                             order='F')
 
     tr_Pi = np.empty((c+1,), dtype=np.float64, order='F')
-
-    #temp_Pi = np.zeros((c+1, c+1), dtype=np.float64, order='F')
-    #temp_PiPi = np.zeros((c+1, c+1), dtype=np.float64, order='F')            
+           
     temp_Pi = np.empty((c+1, c+1), dtype=np.float64, order='F')
     temp_PiPi = np.empty((c+1, c+1), dtype=np.float64, order='F')            
-        
-
-    #print(f"Pi @ Pi: {round(time.time() - start, 4)} s")
-
-    #start = time.time()
-    
-    #print(f"Trace Pi: {round(time.time() - start, 4)} s")
-
 
     # If not performing full computation
     # Skips computations if we only need first derivative (meaning brent)
     if not full:
         # Pi Computations
-        #start = time.time()
         for i in range(c+1): # Loop for Pi
             if i == 0:
                 temp_Pi[:,:] = blas.dsyrk(1.0, np.sqrt(Hi_eval[:,np.newaxis]) * W_star, trans=1, lower=1)
@@ -1392,20 +961,16 @@ cpdef precompute_mat(float lam,
                 temp_Pi[i,i] = max(temp_Pi[i,i], MIN_VAL)
 
                 wjt_Pi_wk[i:,i,i:] = temp_Pi[i:,i:]
-        #start = time.time()
         precompute_dict = {
-                        #'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c].astype(np.float32),
                         'wjt_Pi_wk'                 : wjt_Pi_wk[:, :, :].astype(np.float32),
                         'wjt_Pi_Pi_wk'              : wjt_Pi_Pi_wk[:c, :, :c].astype(np.float32),
                         'yt_Pi_y'                   : wjt_Pi_wk[c, :, c].astype(np.float32),
                         'yt_Pi_Pi_y'                : wjt_Pi_Pi_wk[c, :, c].astype(np.float32),
                         'tr_Pi'                     : tr_Pi.astype(np.float32),
-                        'logdet_Wt_W'               : 0.0, #float(np.linalg.slogdet(W.T @ W)[1]),
+                        'logdet_Wt_W'               : 0.0,
                         'logdet_Wt_H_inv_W'         : float(logdet_Wt_H_inv_W),
                         'logdet_H'                  : float(np.log(lam*eigenVals + 1.0).sum()),
-                        #'logdet_H'                  : float(np.sum(np.log(lam*eigenVals + 1.0))),
                         }
-        #print(f"Precompute: {round(time.time() - start, 4)} s")
 
         return precompute_dict
 
@@ -1421,7 +986,6 @@ cpdef precompute_mat(float lam,
         temp_PiPiPi = np.empty((c+1, c+1), dtype=np.float64, order='F')
 
         # Pi Computations
-        #start = time.time()
         for i in range(c+1): # Loop for Pi
             if i == 0:
                 temp_Pi[:,:] = blas.dsyrk(1.0, np.sqrt(Hi_eval[:,np.newaxis]) * W_star, trans=1, lower=1)
@@ -1439,7 +1003,7 @@ cpdef precompute_mat(float lam,
 
                 wjt_Pi_Pi_Pi_wk[:,i,:] = temp_PiPiPi
 
-                tr_Pi_Pi[0] = np.dot(Hi_eval,Hi_eval) #np.sum(Hi_eval ** 2.0)
+                tr_Pi_Pi[0] = np.dot(Hi_eval,Hi_eval)
             else:
                 tr_Pi_Pi[i] = tr_Pi_Pi[i-1] + ((temp_PiPi[i-1,i-1] / temp_Pi[i-1,i-1]) ** 2.0) \
                                     - 2 * (temp_PiPiPi[i-1,i-1] / temp_Pi[i-1,i-1])
@@ -1471,19 +1035,8 @@ cpdef precompute_mat(float lam,
                 
                 wjt_Pi_wk[i:,i,i:] = temp_Pi[i:,i:]
 
-            
 
-        #print(f"Pi @ Pi @ Pi: {round(time.time() - start, 4)} s")
-
-
-        # Use np.cumsum to compute trace
-        #start = time.time()
-
-        #print(f"Trace Pi @ Pi: {round(time.time() - start, 4)} s")
-
-        #start = time.time()
         precompute_dict = {
-                            #'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c].astype(np.float32),
                             'wjt_Pi_wk'                 : wjt_Pi_wk[:, :, :].astype(np.float32),
                             'wjt_Pi_Pi_wk'              : wjt_Pi_Pi_wk[:c, :, :c].astype(np.float32),
                             'wjt_Pi_Pi_Pi_wk'           : wjt_Pi_Pi_Pi_wk[:c, :, :c].astype(np.float32),
@@ -1492,14 +1045,10 @@ cpdef precompute_mat(float lam,
                             'yt_Pi_y'                   : wjt_Pi_wk[c, :, c].astype(np.float32),
                             'yt_Pi_Pi_y'                : wjt_Pi_Pi_wk[c, :, c].astype(np.float32),
                             'yt_Pi_Pi_Pi_y'             : wjt_Pi_Pi_Pi_wk[c, :, c].reshape(-1).astype(np.float32),
-                            'logdet_Wt_W'               : 0.0, #float(np.linalg.slogdet(W.T @ W)[1]),
+                            'logdet_Wt_W'               : 0.0,
                             'logdet_Wt_H_inv_W'         : float(logdet_Wt_H_inv_W),
                             'logdet_H'                  : float(np.log(lam*eigenVals + 1.0).sum()),
-                            #'logdet_H'                  : float(np.sum(np.log(lam*eigenVals + 1.0))),
                             }
-        #print(f"Precompute: {round(time.time() - start, 4)} s")
-        
-        #print(f"Runtime: {round(time.time() - start, 4)} s")
 
         return precompute_dict
 
@@ -1516,20 +1065,10 @@ cpdef precompute_mat_concat(float lam,
 
     cdef int c = W_star.shape[1] - 1
 
-    #cdef np.ndarray[np.float64_t, ndim=2] W_star = np.c_[W, Y].astype(np.float64)
-    
-    # I think this line is the expensive part
-    # index_tricks.py:323(__getitem__) is cited as taking 25% of the time
-    # Might be that continuing to concatenate is a problem
-    # Should change function to accept W_star as arg instead
-    # https://github.com/numpy/numpy/blob/2e8994d3d1c1edfd94cbbeb18771a3ea789a2eb3/numpy/lib/index_tricks.py#L310
-    #cdef np.ndarray[np.float64_t, ndim=2] W_star = np.asfortranarray(np.c_[W, Y], dtype=np.float64)
-    
     # Note: W is now a matrix of shape (n, c+1), where n is the number of samples and c is the number of covariates
     # W[:,c+1] is the phenotype vector
 
     cdef np.ndarray[np.float64_t, ndim=1] Hi_eval = np.asfortranarray(1.0 / (lam*eigenVals + 1.0), dtype=np.float64)
-    #print(lam, Hi_eval[:5])
 
     cdef np.ndarray[np.float64_t, ndim=3] wjt_Pi_wk = np.empty((c+1, 
                                                                 c+1, 
@@ -1543,11 +1082,9 @@ cpdef precompute_mat_concat(float lam,
     cdef np.ndarray[np.float64_t, ndim=1] tr_Pi
     cdef np.ndarray[np.float64_t, ndim=1] tr_Pi_Pi
 
-    cdef float logdet_Wt_H_inv_W = 0.0 #np.linalg.slogdet(W.T @ (Hi_eval[:,np.newaxis] * W))[1]
+    cdef float logdet_Wt_H_inv_W = 0.0
 
     cdef np.ndarray[np.float64_t, ndim=2] temp_Pi, temp_PiPi, temp_PiPiPi
-
-    #start = time.time()
 
     wjt_Pi_Pi_wk = np.empty((c+1, 
                             c+1, 
@@ -1556,25 +1093,15 @@ cpdef precompute_mat_concat(float lam,
                             order='F')
 
     tr_Pi = np.empty((c+1,), dtype=np.float64, order='F')
-
-    #temp_Pi = np.zeros((c+1, c+1), dtype=np.float64, order='F')
-    #temp_PiPi = np.zeros((c+1, c+1), dtype=np.float64, order='F')            
+        
     temp_Pi = np.empty((c+1, c+1), dtype=np.float64, order='F')
     temp_PiPi = np.empty((c+1, c+1), dtype=np.float64, order='F')            
-        
-
-    #print(f"Pi @ Pi: {round(time.time() - start, 4)} s")
-
-    #start = time.time()
-    
-    #print(f"Trace Pi: {round(time.time() - start, 4)} s")
 
 
     # If not performing full computation
     # Skips computations if we only need first derivative (meaning brent)
     if not full:
         # Pi Computations
-        #start = time.time()
         for i in range(c+1): # Loop for Pi
             if i == 0:
                 temp_Pi[:,:] = blas.dsyrk(1.0, np.sqrt(Hi_eval[:,np.newaxis]) * W_star, trans=1, lower=1)
@@ -1603,21 +1130,18 @@ cpdef precompute_mat_concat(float lam,
                 temp_Pi[i,i] = max(temp_Pi[i,i], MIN_VAL)
 
                 wjt_Pi_wk[i,i:,i:] = temp_Pi[i:,i:]
-        #start = time.time()
+        
         precompute_dict = {
-                        #'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c].astype(np.float32),
                         'wjt_Pi_wk'                 : wjt_Pi_wk.swapaxes(0,1).astype(np.float32),
                         'wjt_Pi_Pi_wk'              : wjt_Pi_Pi_wk.swapaxes(0,1).astype(np.float32),
                         'yt_Pi_y'                   : wjt_Pi_wk[:, c, c].astype(np.float32),
                         'yt_Pi_Pi_y'                : wjt_Pi_Pi_wk[:, c, c].astype(np.float32),
                         'tr_Pi'                     : tr_Pi.astype(np.float32),
-                        'logdet_Wt_W'               : 0.0, #float(np.linalg.slogdet(W.T @ W)[1]),
+                        'logdet_Wt_W'               : 0.0,
                         'logdet_Wt_H_inv_W'         : float(logdet_Wt_H_inv_W),
                         'logdet_H'                  : float(np.log(lam*eigenVals + 1.0).sum()),
-                        #'logdet_H'                  : float(np.sum(np.log(lam*eigenVals + 1.0))),
                         }
-        #print(f"Precompute: {round(time.time() - start, 4)} s")
-
+        
         return precompute_dict
 
     else:
@@ -1632,7 +1156,6 @@ cpdef precompute_mat_concat(float lam,
         temp_PiPiPi = np.empty((c+1, c+1), dtype=np.float64, order='F')
 
         # Pi Computations
-        #start = time.time()
         for i in range(c+1): # Loop for Pi
             if i == 0:
                 temp_Pi[:,:] = blas.dsyrk(1.0, np.sqrt(Hi_eval[:,np.newaxis]) * W_star, trans=1, lower=1)
@@ -1650,7 +1173,7 @@ cpdef precompute_mat_concat(float lam,
 
                 wjt_Pi_Pi_Pi_wk[i,:,:] = temp_PiPiPi
 
-                tr_Pi_Pi[0] = np.dot(Hi_eval,Hi_eval) #np.sum(Hi_eval ** 2.0)
+                tr_Pi_Pi[0] = np.dot(Hi_eval,Hi_eval)
             else:
                 tr_Pi_Pi[i] = tr_Pi_Pi[i-1] + ((temp_PiPi[i-1,i-1] / temp_Pi[i-1,i-1]) ** 2.0) \
                                     - 2 * (temp_PiPiPi[i-1,i-1] / temp_Pi[i-1,i-1])
@@ -1683,18 +1206,7 @@ cpdef precompute_mat_concat(float lam,
                 wjt_Pi_wk[i,i:,i:] = temp_Pi[i:,i:]
 
             
-
-        #print(f"Pi @ Pi @ Pi: {round(time.time() - start, 4)} s")
-
-
-        # Use np.cumsum to compute trace
-        #start = time.time()
-
-        #print(f"Trace Pi @ Pi: {round(time.time() - start, 4)} s")
-
-        #start = time.time()
         precompute_dict = {
-                            #'wjt_Pi_wk'                 : wjt_Pi_wk[:c, :, :c].astype(np.float32),
                             'wjt_Pi_wk'                 : wjt_Pi_wk.swapaxes(0,1).astype(np.float32),
                             'wjt_Pi_Pi_wk'              : wjt_Pi_Pi_wk.swapaxes(0,1).astype(np.float32),
                             'wjt_Pi_Pi_Pi_wk'           : wjt_Pi_Pi_Pi_wk.swapaxes(0,1).astype(np.float32),
@@ -1703,14 +1215,10 @@ cpdef precompute_mat_concat(float lam,
                             'yt_Pi_y'                   : wjt_Pi_wk[:, c, c].astype(np.float32),
                             'yt_Pi_Pi_y'                : wjt_Pi_Pi_wk[:, c, c].astype(np.float32),
                             'yt_Pi_Pi_Pi_y'             : wjt_Pi_Pi_Pi_wk[:, c, c].reshape(-1).astype(np.float32),
-                            'logdet_Wt_W'               : 0.0, #float(np.linalg.slogdet(W.T @ W)[1]),
+                            'logdet_Wt_W'               : 0.0,
                             'logdet_Wt_H_inv_W'         : float(logdet_Wt_H_inv_W),
                             'logdet_H'                  : float(np.log(lam*eigenVals + 1.0).sum()),
-                            #'logdet_H'                  : float(np.sum(np.log(lam*eigenVals + 1.0))),
                             }
-        #print(f"Precompute: {round(time.time() - start, 4)} s")
-        
-        #print(f"Runtime: {round(time.time() - start, 4)} s")
 
         return precompute_dict
 
@@ -1730,14 +1238,12 @@ cdef precompute_Pi(cython.double[:,:] W,
     for i in range(c): # Loop for Pi
         with nogil:
             if i == 0:
-                #wjt_Pi_wk[:,i,:] = np.dot(W_star.T, Hi_eval[:,np.newaxis] * W_star)
                 for j in range(c):
                     for k in range(c):
                         for l in range(c):
                             wjt_Pi_wk[j,i,k] += W[l,j] * Hi_eval[l] * W[l,k]
 
             else:
-                #wjt_Pi_wk[:,i,:] = wjt_Pi_wk[:,i-1,:] - np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) / wjt_Pi_wk[i-1,i-1,i-1]
                 for j in range(c):
                     for k in range(c):
                         wjt_Pi_wk[j,i,k] = wjt_Pi_wk[j,i-1,k] - wjt_Pi_wk[j,i-1,i-1] * wjt_Pi_wk[i-1,i-1,k] / wjt_Pi_wk[i-1,i-1,i-1]
@@ -1767,14 +1273,12 @@ cdef precompute_PiPi(cython.double[:,:] W,
     for i in range(c): # Loop for Pi
         with nogil:
             if i == 0:
-                #wjt_Pi_wk[:,i,:] = np.dot(W_star.T, Hi_eval[:,np.newaxis] * W_star)
                 for j in range(c):
                     for k in range(c):
                         for l in range(c):
                             wjt_Pi_Pi_wk[j,i,k] = W[l,j] * Hi_eval[l] * Hi_eval[l] * W[l,k]
 
             else:
-                #wjt_Pi_wk[:,i,:] = wjt_Pi_wk[:,i-1,:] - np.outer(wjt_Pi_wk[:,i-1,i-1], wjt_Pi_wk[:,i-1,i-1]) / wjt_Pi_wk[i-1,i-1,i-1]
                 for j in range(c):
                     for k in range(c):
                         wjt_Pi_Pi_wk[j,i,k] = wjt_Pi_Pi_wk[j,i-1,l] \
@@ -1971,11 +1475,6 @@ cpdef calc_beta_vg_ve(np.ndarray[np.float32_t, ndim=1] eigenVals,
 
     cdef np.float32_t ytPxy = max(compute_at_Pi_b(lam, c+1, mod_eig, W_x, Y, Y), MIN_VAL)
 
-    # NOTE: x.T @ Px @ x is negative. We should fix this, but for now, we're throwing it away bc
-    # it's not needed for anything
-    #cdef np.float32_t se_beta = (1/np.sqrt((n - c - 1))) * np.sqrt(ytPxy)/np.sqrt(x.T @ Pc @ x)
-
-
     cdef np.float32_t tau = n/ytPxy
 
     return beta, beta_vec, None, tau
@@ -1999,9 +1498,6 @@ cpdef calc_beta_vg_ve_restricted(np.ndarray[np.float32_t, ndim=1] eigenVals,
 
     cdef np.ndarray[np.float32_t, ndim=2] W_x_t_H_inv = ((1.0/mod_eig)[:,np.newaxis] * W_x).T
     
-    #cdef np.ndarray[np.float32_t, ndim=2] beta_vec = np.linalg.inv(W_x_t_H_inv @ W_x) @ (W_x_t_H_inv @ Y)
-    
-    #cdef np.float32_t beta = beta_vec[c,0] #compute_at_Pi_b(lam, c, mod_eig, W, x, Y) / max(compute_at_Pi_b(lam, c, mod_eig, W, x, x), MIN_VAL) # Double check this property holds, but I think it does bc positive symmetric
     cdef np.float32_t beta = compute_at_Pi_b(lam, c, mod_eig, W, x, Y) / max(compute_at_Pi_b(lam, c, mod_eig, W, x, x), MIN_VAL) # Double check this property holds, but I think it does bc positive symmetric
 
     cdef np.float32_t ytPxy = max(compute_at_Pi_b(lam, c+1, mod_eig, W_x, Y, Y), MIN_VAL)
@@ -2010,7 +1506,6 @@ cpdef calc_beta_vg_ve_restricted(np.ndarray[np.float32_t, ndim=1] eigenVals,
 
     cdef np.float32_t tau = (n-c-1)/ytPxy
 
-    #return np.float32(beta), beta_vec, np.float32(se_beta), np.float32(tau)
     return np.float32(beta), 0.0, np.float32(se_beta), np.float32(tau)
 
 @cython.boundscheck(False) # turn off bounds-checking for entire function
@@ -2031,22 +1526,15 @@ cpdef calc_beta_vg_ve_restricted_overload(np.ndarray[np.float32_t, ndim=1] eigen
     
     cdef np.ndarray[np.float32_t, ndim=1] mod_eig = lam*eigenVals + 1.0
 
-    #cdef np.ndarray[np.float32_t, ndim=2] W_x_t_H_inv = ((1.0/mod_eig)[:,np.newaxis] * W_x).T
-    
-    #cdef np.ndarray[np.float32_t, ndim=2] beta_vec = np.linalg.inv(W_x_t_H_inv @ W_x) @ (W_x_t_H_inv @ Y)
-    
-    #cdef np.float32_t beta = beta_vec[c,0] #compute_at_Pi_b(lam, c, mod_eig, W, x, Y) / max(compute_at_Pi_b(lam, c, mod_eig, W, x, x), MIN_VAL) # Double check this property holds, but I think it does bc positive symmetric
     cdef np.float32_t beta = precompute_dict['wjt_Pi_wk'][c+1,c,c] / precompute_dict['wjt_Pi_wk'][c,c,c]
 
-    cdef np.float32_t ytPxy = precompute_dict['yt_Pi_y'][c+1] #max(compute_at_Pi_b(lam, c+1, mod_eig, W_x, Y, Y), MIN_VAL)
+    cdef np.float32_t ytPxy = precompute_dict['yt_Pi_y'][c+1]
 
     cdef np.float32_t se_beta = np.sqrt(ytPxy) / (np.sqrt(max(precompute_dict['wjt_Pi_wk'][c,c,c], MIN_VAL)) * np.sqrt((n - c - 1)))
-    #cdef np.float32_t se_beta = np.sqrt(ytPxy) / (np.sqrt(max(compute_at_Pi_b(lam, c, mod_eig, W, x, x), MIN_VAL)) * np.sqrt((n - c - 1)))
 
     cdef np.float32_t tau = (n-c-1)/ytPxy
 
     return np.float32(beta), 0.0, np.float32(se_beta), np.float32(tau)
-    #return np.float32(beta), beta_vec, np.float32(se_beta), np.float32(tau)
 
 @cython.boundscheck(False) # turn off bounds-checking for entire function
 @cython.wraparound(False)  # turn off negative index wrapping for entire function

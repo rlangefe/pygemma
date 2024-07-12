@@ -19,6 +19,12 @@ extensions = [
               sources=['lmm/lmm.py'],
               include_dirs=[np.get_include(), scipy.get_include()],
               extra_compile_args=["-O3"],
+              ),
+
+    Extension('pygemma.plot',
+              sources=['plotting/plot.py'],
+              include_dirs=[np.get_include(), scipy.get_include()],
+              extra_compile_args=["-O3"],
               )
 ]
 

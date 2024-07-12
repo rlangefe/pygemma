@@ -20,6 +20,18 @@ from scipy.linalg import eigh
 import time
 
 def calc_lambda(eigenVals, Y, W):
+    """
+    Calculate the optimal value of lambda for a given set of eigenvalues, phenotypes, and covariates.
+
+    Parameters:
+    eigenVals (array-like): Eigenvalues of the genetic similarity matrix.
+    Y (array-like): Phenotype values.
+    W (array-like): Covariate matrix.
+
+    Returns:
+    float: The optimal value of lambda.
+    """
+
     # Loop over intervals and find where likelihood changes signs with respect to lambda
     step = 1.0
 
@@ -72,7 +84,27 @@ def calc_lambda(eigenVals, Y, W):
     return roots[np.argmax(likelihood_list)]
 
 
-def pygemma(Y, X, W, K, Z=None, snps=None, verbose=0, disable_checks=True, de=False, nproc=1):
+def pygemma(Y, X, W, K, Z=None, snps=None, verbose=0, disable_checks=True, de=False, grid=False, eigen=True, nproc=1):
+    """
+    Perform Genome-wide Efficient Mixed Model Association (GEMMA) analysis.
+
+    Args:
+        Y (ndarray): Phenotype matrix of shape (n, 1).
+        X (ndarray): Genotype matrix of shape (n, m), where n is the number of individuals and m is the number of SNPs.
+        W (ndarray): Covariate matrix of shape (n, c), where c is the number of covariates.
+        K (ndarray): Genetic relatedness matrix (GRM) of shape (n, n).
+        Z (ndarray, optional): Additional random effect matrix of shape (n, q), where q is the number of random effects. Defaults to None.
+        snps (list, optional): List of SNP names. Defaults to None.
+        verbose (int, optional): Verbosity level. Defaults to 0.
+        disable_checks (bool, optional): Flag to disable NaN checks. Defaults to True.
+        de (bool, optional): Flag to perform differential expression analysis (X is outcome, Y is predictor). Defaults to False.
+        grid (bool, optional): Flag to use grid search for lambda. Defaults to False.
+        nproc (int, optional): Number of processes for parallelization. Defaults to 1.
+
+    Returns:
+        DataFrame: Results of the GEMMA analysis, including beta coefficients, standard errors, tau values, lambda values, Wald test statistics, and p-values.
+    """
+    
     if True: # Fix compatability issues with Python<=3.6.9 later (issue with rich package)
         console = Console()
     else:
@@ -115,18 +147,24 @@ def pygemma(Y, X, W, K, Z=None, snps=None, verbose=0, disable_checks=True, de=Fa
             start = time.time()
             # TODO: Add symmetric eigenvalue decomposition function (faster and better)
             #eigenVals, U = np.linalg.eig(K) # Perform eigendecomposition
-            eigenVals, U = eigh(K) # Perform eigendecomposition
-            
-            if U.dtype != np.float32:
-                U = U.astype(np.float32)
 
-            eigenVals = np.maximum(0.0, eigenVals)
+            if eigen:
+                eigenVals, U = eigh(K) # Perform eigendecomposition
+                
+                if U.dtype != np.float32:
+                    U = U.astype(np.float32)
 
-            if eigenVals.dtype != np.float32:
-                eigenVals = eigenVals.astype(np.float32)
+                eigenVals = np.maximum(0.0, eigenVals)
 
-            assert (eigenVals >= 0).all()
-            console.log(f"[green]Eigendecomposition computed - {round(time.time() - start,3)} s")
+                if eigenVals.dtype != np.float32:
+                    eigenVals = eigenVals.astype(np.float32)
+
+                assert (eigenVals >= 0).all()
+                console.log(f"[green]Eigendecomposition computed - {round(time.time() - start,3)} s")
+            else:
+                # Negative eigenvals set to zero
+                K = np.maximum(0.0, K)
+                eigenVals = K
 
             #start = time.time()
             #X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
@@ -154,17 +192,23 @@ def pygemma(Y, X, W, K, Z=None, snps=None, verbose=0, disable_checks=True, de=Fa
         #eigenVals, U = np.linalg.eig(K) # Perform eigendecomposition
         # TODO: Add symmetric eigenvalue decomposition function (faster and better)
         #eigenVals, U = np.linalg.eig(K) # Perform eigendecomposition
-        eigenVals, U = eigh(K) # Perform eigendecomposition
 
-        if U.dtype != np.float32:
-            U = U.astype(np.float32)
+        if eigen:
+            eigenVals, U = eigh(K) # Perform eigendecomposition
 
-        eigenVals = np.maximum(0.0, eigenVals)
+            if U.dtype != np.float32:
+                U = U.astype(np.float32)
 
-        if eigenVals.dtype != np.float32:
-            eigenVals = eigenVals.astype(np.float32)
+            eigenVals = np.maximum(0.0, eigenVals)
 
-        assert (eigenVals >= 0).all()
+            if eigenVals.dtype != np.float32:
+                eigenVals = eigenVals.astype(np.float32)
+
+            assert (eigenVals >= 0).all()
+        else:
+            # Negative eigenvals set to zero
+            K = np.maximum(0.0, K)
+            eigenVals = K
 
         #X = (X - np.mean(X, axis=0))/np.std(X, axis=0)
 
@@ -196,9 +240,10 @@ def pygemma(Y, X, W, K, Z=None, snps=None, verbose=0, disable_checks=True, de=Fa
         start = time.time()
 
     # Might be able to speed this up by stacking all three and multiplying by U.T once
-    X = U.T @ X
-    Y = U.T @ Y
-    W = U.T @ W
+    if eigen:
+        X = U.T @ X
+        Y = U.T @ Y
+        W = U.T @ W
     # X = np.dot(U.T, X)
     # Y = np.dot(U.T, Y)
     # W = np.dot(U.T, W)
@@ -339,7 +384,7 @@ def pygemma(Y, X, W, K, Z=None, snps=None, verbose=0, disable_checks=True, de=Fa
         start = time.time()
         done = 0
         if de:
-            for r in track(pool.imap(calculate_de, SampleIter(X_shared_np, Y_shared_np, W_shared_np, eigenVals, nproc)),
+            for r in track(pool.imap(calculate_de, SampleIter(X_shared_np, Y_shared_np, W_shared_np, eigenVals, grid, nproc)),
                     description='Testing SNPs...', total=total):
                 # update the progress bar
                 done += 1
@@ -347,7 +392,7 @@ def pygemma(Y, X, W, K, Z=None, snps=None, verbose=0, disable_checks=True, de=Fa
 
                 results = results + r
         else:
-            for r in track(pool.imap(calculate, SampleIter(X_shared_np, Y_shared_np, W_shared_np, eigenVals, nproc)),
+            for r in track(pool.imap(calculate, SampleIter(X_shared_np, Y_shared_np, W_shared_np, eigenVals, grid, nproc)),
                         description='Testing SNPs...', total=total):
                 # update the progress bar
                 done += 1
@@ -366,11 +411,12 @@ def pygemma(Y, X, W, K, Z=None, snps=None, verbose=0, disable_checks=True, de=Fa
     return results_df
 
 class SampleIter:
-    def __init__(self, X, Y, W, eigenVals, nproc):
+    def __init__(self, X, Y, W, eigenVals, grid, nproc):
         self.X = X
         self.Y = Y
         self.W = W
         self.eigenVals = eigenVals
+        self.grid = grid
         self.nproc = nproc
         self.n_cols = X.shape[1]
         self.current_proc = 0
@@ -385,7 +431,7 @@ class SampleIter:
             end_col = min((self.current_proc + 1) * cols_per_proc, self.n_cols)
             self.current_proc += 1
 
-            return self.eigenVals, self.Y, self.W, self.X[:, start_col:end_col]
+            return self.eigenVals, self.Y, self.W, self.X[:, start_col:end_col], self.grid
         else:
             raise StopIteration
 
@@ -413,13 +459,13 @@ class SampleIter:
 #             raise StopIteration
 
 def calculate(t):
-    eigenVals, Y, W, X = t
+    eigenVals, Y, W, X, grid = t
 
     results_list = []
 
     for g in range(X.shape[1]):
         try:
-            lambda_restricted = calc_lambda_restricted(eigenVals, Y, np.c_[W, X[:,g]])
+            lambda_restricted = calc_lambda_restricted(eigenVals, Y, np.c_[W, X[:,g]], grid=grid)
             #beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted(eigenVals, W, X.reshape(-1,1), lambda_restricted, Y)
             beta, beta_vec, se_beta, tau = calc_beta_vg_ve_restricted_overload(eigenVals, W, X[:,g].reshape(-1,1), lambda_restricted, Y)
             F_wald = np.float64(beta/se_beta) ** 2.0
@@ -576,192 +622,4 @@ try:
     print("Using Cython version of pyGEMMA")
 
 except ImportError:
-    print("Cython not available, using Python version of pyGEMMA")
-
-    def compute_Pc(eigenVals, U, W, lam):
-        H_inv = U @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U.T
-        W_x = W
-
-        return H_inv - H_inv @ W_x @ np.linalg.inv(W_x.T @ H_inv @ W_x) @ W_x.T @ H_inv
-    
-    def calc_beta_vg_ve(eigenVals, U, W, x, lam, Y):
-        W_x = np.c_[W,x]
-        Px = compute_Pc(eigenVals, U, W_x, lam)
-        
-        n, c = W.shape
-
-
-        W_xt_Px = W_x.T @ Px
-        beta_vec = np.linalg.inv(W_xt_Px @ W_x) @ (W_xt_Px @ Y)
-        beta = beta_vec[-1]
-
-        ytPxy = Y.T @ Px @ Y
-
-        se_beta = (1/np.sqrt((n - c - 1))) * np.sqrt(ytPxy)/np.sqrt(x.T @ Px @ x)
-
-        tau = n/ytPxy
-
-        return beta, se_beta, tau
-
-    def calc_beta_vg_ve_restricted(eigenVals, U, W, x, lam, Y):
-        W_x = np.c_[W,x]
-
-        Px = compute_Pc(eigenVals, U, W_x, lam)
-        Pc = compute_Pc(eigenVals, U, W, lam)
-
-        n, c = W.shape
-
-        W_xt_Pc = W_x.T @ Pc
-        beta_vec = np.linalg.inv(W_xt_Pc @ W_x) @ (W_xt_Pc @ Y)
-        beta = beta_vec[-1]
-
-        ytPxy = Y.T @ Px @ Y
-
-        se_beta = (1/np.sqrt((n - c - 1))) * np.sqrt(ytPxy)/np.sqrt(x.T @ Pc @ x)
-
-        tau = (n-c-1)/ytPxy
-
-        return float(beta), float(se_beta), float(tau)
-
-    def likelihood_lambda(lam, eigenVals, U, Y, W):
-        n = Y.shape[0]
-
-        result = (n/2)*np.log(n/(2*np.pi))
-
-        result = result - n/2
-
-        result = result - 0.5*np.sum(np.log(lam*eigenVals + 1.0))
-
-        result = result - (n/2)*np.log(Y.T @ compute_Pc(eigenVals, U, W, lam) @ Y)
-
-        return float(result)
-
-    def likelihood_derivative1_lambda(lam, eigenVals, U, Y, W):
-        n = Y.shape[0]
-
-        result = -0.5*((n-np.sum(1/(lam*eigenVals + 1.0)))/lam)
-
-        Px = compute_Pc(eigenVals, U, W, lam)
-
-        yT_Px_y = Y.T @ Px @ Y
-
-        yT_Px_G_Px_y = (yT_Px_y - (Y.T @ Px) @ (Px @ Y))/lam
-
-        result = result - (n/2)*yT_Px_G_Px_y/yT_Px_y
-
-        return float(result)
-
-    def likelihood_derivative2_lambda(lam, eigenVals, U, Y, W): 
-        n = Y.shape[0]
-
-        result = 0.5*(n + np.sum(np.power(lam*eigenVals + 1.0, -2)) + 2*np.sum(np.power(lam*eigenVals + 1.0,-1)))
-
-        Px = compute_Pc(eigenVals, U, W, lam)
-
-        yT_Px_y = Y.T @ Px @ Y
-
-        yT_Px_Px_y = (Y.T @ Px) @ (Px @ Y)
-
-        yT_Px_G_Px_G_Px_y = (yT_Px_y + (Y.T @ Px) @ Px @ (Px @ Y) - 2*yT_Px_Px_y)/(lam*lam)
-
-        yT_Px_G_Px_y = (yT_Px_y - yT_Px_Px_y)/lam
-
-        result = result - 0.5 * n * (2 * yT_Px_G_Px_G_Px_y * yT_Px_y - yT_Px_G_Px_y * yT_Px_G_Px_y) / (yT_Px_y * yT_Px_y)
-
-        return float(result)
-
-    def likelihood_derivative1_restricted_lambda(lam, eigenVals, U, Y, W):
-        n = W.shape[0]
-        c = W.shape[1]
-
-        Px = compute_Pc(eigenVals, U, W, lam)
-
-        result = -0.5*((n-c - np.trace(Px))/lam)
-
-        yT_Px_y = Y.T @ Px @ Y
-
-        yT_Px_G_Px_y = (yT_Px_y - (Y.T @ Px) @ (Px @ Y))/lam
-
-        result = result - 0.5*(n - c)*yT_Px_G_Px_y/yT_Px_y
-
-        return float(result)
-
-    def likelihood_derivative2_restricted_lambda(lam, eigenVals, U, Y, W): 
-        n = Y.shape[0]
-        c = W.shape[1]
-
-        Px = compute_Pc(eigenVals, U, W, lam)
-
-        yT_Px_y = Y.T @ Px @ Y
-
-        yT_Px_Px_y = (Y.T @ Px) @ (Px @ Y)
-
-        yT_Px_G_Px_G_Px_y = (yT_Px_y + (Y.T @ Px) @ Px @ (Px @ Y) - 2*yT_Px_Px_y)/(lam*lam)
-
-        yT_Px_G_Px_y = (yT_Px_y - yT_Px_Px_y)/lam
-
-        result = 0.5*(n - c + np.trace(Px @ Px) - 2*np.trace(Px))/(lam*lam)
-
-        result = result - 0.5 * (n - c) * (2 * yT_Px_G_Px_G_Px_y @ yT_Px_y - yT_Px_G_Px_y @ yT_Px_G_Px_y) / (yT_Px_y * yT_Px_y)
-
-        return float(result)
-
-    def likelihood(lam, tau, beta, eigenVals, U, Y, W):
-        n = W.shape[0]
-
-        H_inv = U @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U.T
-
-        result = (n/2)*np.log(tau) 
-        result = result - (n/2)*np.log(2*np.pi)
-        
-        result = result - 0.5 * np.sum(np.log(lam*eigenVals + 1.0))
-
-        y_W_beta = Y - W @ beta
-
-        result = result - 0.5 * tau * y_W_beta.T @ H_inv @ y_W_beta
-
-
-        return float(result)
-
-    def likelihood_restricted(lam, tau, eigenVals, U, Y, W):
-        n = W.shape[0]
-        c = W.shape[1]
-
-        H_inv = U @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U.T
-
-        result = 0.5*(n - c)*np.log(tau)
-        result = result - 0.5*(n - c)*np.log(2*np.pi)
-        _, logdet = np.linalg.slogdet(W.T @ W)
-        result = result + 0.5*logdet
-
-        result = result - 0.5 * np.sum(np.log(lam*eigenVals + 1.0))
-
-        #result = result - 0.5*np.log(np.linalg.det(W_x.T @ H_inv @ W_x)) # Causing NAN
-        _, logdet = np.linalg.slogdet(W.T @ H_inv @ W)
-        result = result - 0.5*logdet # Causing NAN
-
-        result = result - 0.5*(n - c)*np.log(Y.T @ compute_Pc(eigenVals, U, W, lam) @ Y)
-
-        return float(result)
-
-    def likelihood_restricted_lambda(lam, eigenVals, U, Y, W):
-        n, c = W.shape
-
-        H_inv = U @ np.diagflat(1/(lam*eigenVals + 1.0)) @ U.T
-
-        result = 0.5*(n - c)*np.log(0.5*(n - c)/np.pi)
-        result = result - 0.5*(n - c)
-        _, logdet = np.linalg.slogdet(W.T @ W)
-        result = result + 0.5*logdet
-        
-        result = result - 0.5 * np.sum(np.log(lam*eigenVals + 1.0))
-
-        #result = result - 0.5*np.log(np.linalg.det(W_x.T @ H_inv @ W_x)) # Causing NAN
-        _, logdet = np.linalg.slogdet(W.T @ H_inv @ W)
-        result = result - 0.5*logdet # Causing NAN
-
-        result = result - 0.5*(n - c)*np.log(Y.T @ compute_Pc(eigenVals, U, W, lam) @ Y)
-
-        return float(result)
-
-
+    print("Cython not available")
