@@ -5,6 +5,7 @@ pandas
 seaborn
 pillow<=8.4
 matplotlib<=3.3
+plotly
 rich
 scikit-learn<1.0
 Cython

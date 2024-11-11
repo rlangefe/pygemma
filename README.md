@@ -16,15 +16,16 @@ The current implementation of `pyGEMMA` was tested on the following configuratio
 - gcc/g++ 7.5.0 (Ubuntu 7.5.0-3ubuntu1~18.04)
 
 ### Python Environment
-- [Python 3.7.15](https://www.python.org/)
-- [Numpy 1.21.6](https://numpy.org/)
-- [Cython 0.29.33](https://cython.org/)
-- [Pandas 1.3.5](https://pandas.pydata.org/)
-- [Scipy 1.5.0](https://scipy.org/)
+- [Python 3.8.10](https://www.python.org/)
+- [Numpy 1.24.4](https://numpy.org/)
+- [Cython 3.0.2](https://cython.org/)
+- [Pandas 2.0.3](https://pandas.pydata.org/)
+- [Scipy 1.10.1](https://scipy.org/)
 - [Scikit-learn 0.24.2](https://scikit-learn.org/stable/)
-- [Matplotlib 3.3.0](https://matplotlib.org/)
+- [Matplotlib 3.7.1](https://matplotlib.org/)
+- [Plotly 5.19.0](https://plotly.com/)
 - [Seaborn 0.12.2](https://seaborn.pydata.org/)
-- [rich 13.3.2](https://github.com/Textualize/rich)
+- [rich 13.5.2](https://github.com/Textualize/rich)
 - [qnorm 0.8.1](https://github.com/Maarten-vd-Sande/qnorm)
 
 ## Installation
