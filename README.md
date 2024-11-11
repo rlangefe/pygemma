@@ -1,4 +1,6 @@
-# pyGEMMA - A Python Implementation of Genome-Wide Efficient Mixed-Model Analysis (GEMMA)
+<img src="./graphics/tests/pyGEMMA_logo.png" alt="logo" width = 200px height = 200px >
+
+# pyGEMMA: A Fast, User-Friendly Python/R Implementation of Linear Mixed Models for Genome-Wide Association Studies
 
 ## Table of Contents
 
@@ -29,7 +31,7 @@ The current implementation of `pyGEMMA` was tested on the following configuratio
 - [qnorm 0.8.1](https://github.com/Maarten-vd-Sande/qnorm)
 
 ## Installation
-The installation of `pyGEMMA` is straightforward and can be informed using Python's `pip` package manager. Here, we detail the installation process using a `virtualenv` Python enviroment. This has been tested with the configuration listed in the [Software Requirements](#software-requirements) section. While installation may be possible with other configurations, we it has only been tested with the configuration we list.
+The installation of `pyGEMMA` is straightforward and can be performed using Python's `pip` package manager. Here, we detail the installation process using a `virtualenv` Python enviroment. This has been tested with the configuration listed in the [Software Requirements](#software-requirements) section. While installation may be possible with other configurations, we it has only been tested with the configuration we list.
 
 1. Create your Python environment and activate it. Using `virtualenv`, this can be done by running
 ```bash
@@ -38,15 +40,21 @@ python3 -m virtualenv pygemma_env
 source pygemma_env/bin/activate
 ```
 
+Note: If `pip3 install virtualenv` fails because it can't find `pip3`, you can try running `python3 -m pip install virtualenv` instead. This looks for the `pip` module directly if `pip3` isn't in your `PATH`. 
+
 2. Ensure the `Numpy` and `Cython` packages are both installed prior to installing `pyGEMMA` (they will not be installed automatically). This can be done by running 
 ```bash
 pip install numpy Cython
 ```
 
 3. Clone this repository.
-4. Ensure that you have a valid `C/C++` compiler loaded. `pyGEMMA` has been tested using `gcc/g++`.
+4. Install `pyGEMMA`'s dependencies. From the `pygemma` directory, this can be done by running
+```bash
+pip install -r requirements.txt
+```
+6. Ensure that you have a valid `C/C++` compiler loaded. `pyGEMMA` has been tested using `gcc/g++`.
 
-5. Install `pyGEMMA`. From the `pygemma` directory, this can be done by running 
+7. Install `pyGEMMA`. From the `pygemma` directory, this can be done by running 
 ```bash
 python setup.py install
 ```
@@ -68,7 +76,7 @@ $$
 $$
 
 $$
-\varepsilon \sim \mathcal{\text{MVN}}_{n}(\mathbf{0}, \tau^{-1} \mathbf{I}_{n})
+\mathbf{\varepsilon} \sim \mathcal{\text{MVN}}_{n} \left(\mathbf{0},\tau^{-1} \mathbf{I}_n \right)
 $$
 
 where $\mathbf{y}$  is $n \times 1$ is the vector phenotype, $\mathbf{W}$ is $n \times c$ is the matrix of fixed effect covariates (including the intercept), $\mathbf{\alpha}$ is the $c \times 1$ vector of coefficients for the covariates, $\mathbf{x}$ is the $n \times 1$ vector of genotypes, $beta$ is the effect size of the genotype, $\mathbf{Z}$ is the $n \times m$ loading matrix, $\mathbf{u}$ is the $m \times 1$ vector of random effects, $\mathbf{\varepsilon}$ is the $n \times 1$ vector of errors, $\tau^{-1}$ is the variance of the resitual errors, $\lambda$ is the ratio between the two variances components, and $\mathbf{K}$ is the relatedness matrix. (Description adapted from [Zhou et al. (Nat Gen 2012)](https://www.nature.com/articles/ng.2310))
@@ -80,6 +88,9 @@ lmm.pygemma(Y, X, W, K, snps=snps, verbose=1)
 ```
 
 Note that `snps` is a list of SNP names that will be used to label the `pandas DataFrame` returned by the function. `verbose` controls whether to output run progress.
+
+#### pyGEMMA in R
+We have also developed an R interface for pyGEMMA, enabling its use within the R programming environment. A comprehensive tutorial for this integration can be found [here](https://htmlpreview.github.io/?https://github.com/rlangefe/pygemma/blob/main/pyGEMMA.html)
 
 ## Examples
 
@@ -156,17 +167,17 @@ We provide a [test script](`https://github.com/rlangefe/pygemma/blob/main/tests/
 
 <table>
   <tr>
-    <td> <img src="./graphics/tests/qq1.png"  alt="qq1" width = 360px height = 200px ></td>
-    <td><img src="./graphics/tests/manhattan1.png" alt="manhattan1" width = 360px height = 200px></td>
+    <td> <img src="./tests/output/Homework3_Pheno1_wald_qq.png"  alt="qq1" width = 100% ></td>
+    <td><img src="./tests/output/Homework3_Pheno1_wald_manhatten.png" alt="manhattan1" width = 100%></td>
    </tr> 
    <tr>
-      <td><img src="./graphics/tests/qq2.png" alt="qq2" width = 360px height = 200px></td>
-      <td><img src="./graphics/tests/manhattan2.png" alt="manhattan2" width = 360px height = 200px>
+      <td><img src="./tests/output/Homework3_Pheno2_wald_qq.png" alt="qq2" width = 100%></td>
+      <td><img src="./tests/output/Homework3_Pheno2_wald_manhatten.png" alt="manhattan2" width = 100%
   </td>
   </tr>
   <tr>
-      <td><img src="./graphics/tests/qq3.png" alt="qq3" width = 360px height = 200px></td>
-      <td><img src="./graphics/tests/manhattan3.png" alt="manhattan3" width = 360px height = 200px>
+      <td><img src="./tests/output/Homework3_Pheno3_wald_qq.png" alt="qq3" width = 100%></td>
+      <td><img src="./tests/output/Homework3_Pheno3_wald_manhatten.png" alt="manhattan3" width = 100%>
   </td>
   </tr>
 </table>
