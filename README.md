@@ -132,6 +132,25 @@ Methods:
 
 Based on this, we see that `pyGEMMA` is significantly faster than both `GEMMA` and `GCTA`. It also exhibits better scaling behavior as the number of covariates increases.
 
+### Wellcome Trust Case Control Consortium (WTCCC) Data
+This dataset consists of $\approx$ 390,000 SNPs and 6 binary phenotypes, with around 2,000 case and 3,000 control samples. The data was taken from the [WTCCC](https://www.wtccc.org.uk/) study.
+
+We use this dataset to demonstrate that `pyGEMMA` and `GEMMA` produce identical results.
+
+<table>
+  <tr>
+    <td>Beta</td>
+    <td>-log10 of p-values</td>
+  </tr>
+  <tr>
+    <td> <img src="./experiments/wtccc/comparison/beta_comparison.png"  alt="Time by Sample Size" height = 200px ></td>
+    <td><img src="./experiments/wtccc/comparison/pval_comparison.png" alt="Speedup by Sample Size" height = 200px></td>
+   </tr> 
+</table>
+
+These plots show that the effect sizes and p-values produced by `pyGEMMA` and `GEMMA` are identical.
+
+
 <!-- ### Test Script
 We provide a [test script](`https://github.com/rlangefe/pygemma/blob/main/tests/test_pygemma.py`) designed to test almost all basic functions and to run on three GWAS test cases (10,000 SNPs each). Before using the script, the paths for the data should be updated, as they are currently hardcoded (to be changed later). In our tests, this script took around 7.5 to 8 hours to run. Below, we show the Q-Q and Manhattan plots for the three test cases.
 
