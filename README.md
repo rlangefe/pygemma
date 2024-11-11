@@ -83,6 +83,28 @@ Note that `snps` is a list of SNP names that will be used to label the `pandas D
 
 ## Examples
 
+### UK Biobank Benchmark
+We provide our benchmarks for the UK Biobank data in the [experiments/benchmarks](https://github.com/rlangefe/pygemma/tree/main/experiments/benchmarks) directory. This benchmarking consisted of running random subsets of 50,000 individuals of European ancestry from the UK Biobank data. Subsets were taken from 50 to 10,000 samples and 20 to 100,000 SNPs.
+
+Speedup is calculated as $\frac{t_{\text{Method}}}{t_{\text{pyGEMMA}}}$.
+
+<table>
+  <tr>
+    <td>Runtime</td>
+    <td>Speedup</td>
+  </tr>
+  <tr>
+    <td> <img src="./experiments/benchmarks/benchmark_test/time_by_sample_size.png"  alt="Time by Sample Size" width = 360px height = 200px ></td>
+    <td><img src="./experiments/benchmarks/benchmark_test/speedup_sample_size.png" alt="Speedup by Sample Size" width = 360px height = 200px></td>
+   </tr> 
+   <tr>
+      <td><img src="./experiments/benchmarks/benchmark_test/time_by_snps.png" alt="Time by Number of SNPs" width = 360px height = 200px></td>
+      <td><img src="./experiments/benchmarks/benchmark_test/speedup_num_snps.png" alt="Speedup by Number of SNPs" width = 360px height = 200px>
+  </td>
+  </tr>
+</table>
+
+
 ### Test Script
 We provide a [test script](`https://github.com/rlangefe/pygemma/blob/main/tests/test_pygemma.py`) designed to test almost all basic functions and to run on three GWAS test cases (10,000 SNPs each). Before using the script, the paths for the data should be updated, as they are currently hardcoded (to be changed later). In our tests, this script took around 7.5 to 8 hours to run. Below, we show the Q-Q and Manhattan plots for the three test cases.
 
