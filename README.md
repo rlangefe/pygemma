@@ -118,7 +118,7 @@ Speedup is calculated as $\frac{t_{\text{Method}}}{t_{\text{pyGEMMA}}}$.
 </table>
 
 Methods:
-`pyGEMMA`(<span style="color:#ff7f0e">■</span>), `pyGEMMA - Grid Search`(<span style="#9467bd">■</span>), `GEMMA`(<span style="color:#1f77b4">■</span>), `GCTA`(<span style="color:#2ca02c">■</span>), `fastGWA`(<span style="color:#d62728">■</span>), `Linear Regression`(<span style="color:#8c564b">■</span>)
+`pyGEMMA`(<code style="color:#ff7f0e">■</code>), `pyGEMMA - Grid Search`(<code style="#9467bd">■</code>), `GEMMA`(<code style="color:#1f77b4">■</code>), `GCTA`(<code style="color:#2ca02c">■</code>), `fastGWA`(<code style="color:#d62728">■</code>), `Linear Regression`(<code style="color:#8c564b">■</code>)
 
 Based on this, we see that `pyGEMMA` is at $\approx$ 15-20 times faster than `GCTA` and over 10 times faster than `GEMMA`. While `fastGWA` is faster than `pyGEMMA` for small datasets, `pyGEMMA` is faster for larger datasets.
 
@@ -139,7 +139,7 @@ We use this dataset to benchmark scaling with the number of covariates in the mo
 </table>
 
 Methods:
-`pyGEMMA`(<span style="color:#ff7f0e">■</span>), `GEMMA`(<span style="color:#1f77b4">■</span>), `GCTA`(<span style="color:#2ca02c">■</span>)
+`pyGEMMA`(<code style="color:#ff7f0e">■</code>), `GEMMA`(<code style="color:#1f77b4">■</code>), `GCTA`(<code style="color:#2ca02c">■</code>)
 
 Based on this, we see that `pyGEMMA` is significantly faster than both `GEMMA` and `GCTA`. It also exhibits better scaling behavior as the number of covariates increases.
 
