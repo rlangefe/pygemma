@@ -97,6 +97,8 @@ We have also developed an R interface for pyGEMMA, enabling its use within the R
 ### UK Biobank Benchmark
 We provide our benchmarks for the UK Biobank data in the [experiments/benchmarks](https://github.com/rlangefe/pygemma/tree/main/experiments/benchmarks) directory. This benchmarking consisted of running random subsets of 50,000 individuals of European ancestry from the UK Biobank data. Subsets were taken from 50 to 10,000 samples and 20 to 100,000 SNPs.
 
+We use this data to compare the runtime of `pyGEMMA` to competing methods, namely `GEMMA`, `GCAT`, and `fastGWA`. `Regenie` is not represented here due to the long runtime of its Stage I phase.
+
 Speedup is calculated as $\frac{t_{\text{Method}}}{t_{\text{pyGEMMA}}}$.
 
 <table>
@@ -105,19 +107,44 @@ Speedup is calculated as $\frac{t_{\text{Method}}}{t_{\text{pyGEMMA}}}$.
     <td>Speedup</td>
   </tr>
   <tr>
-    <td> <img src="./experiments/benchmarks/benchmark_test/time_by_sample_size.png"  alt="Time by Sample Size" width = 360px height = 200px ></td>
-    <td><img src="./experiments/benchmarks/benchmark_test/speedup_sample_size.png" alt="Speedup by Sample Size" width = 360px height = 200px></td>
+    <td> <img src="./experiments/benchmarks/benchmark_test/time_by_sample_size.png"  alt="Time by Sample Size" height = 200px ></td>
+    <td><img src="./experiments/benchmarks/benchmark_test/speedup_sample_size.png" alt="Speedup by Sample Size" height = 200px></td>
    </tr> 
    <tr>
-      <td><img src="./experiments/benchmarks/benchmark_test/time_by_snps.png" alt="Time by Number of SNPs" width = 360px height = 200px></td>
-      <td><img src="./experiments/benchmarks/benchmark_test/speedup_num_snps.png" alt="Speedup by Number of SNPs" width = 360px height = 200px>
+      <td><img src="./experiments/benchmarks/benchmark_test/time_by_snps.png" alt="Time by Number of SNPs" height = 200px></td>
+      <td><img src="./experiments/benchmarks/benchmark_test/speedup_num_snps.png" alt="Speedup by Number of SNPs" height = 200px>
   </td>
   </tr>
 </table>
 
+Methods:
+`pyGEMMA`(<span style="color:#ff7f0e">■</span>), `pyGEMMA - Grid Search`(<span style="#9467bd">■</span>), `GEMMA`(<span style="color:#1f77b4">■</span>), `GCTA`(<span style="color:#2ca02c">■</span>), `fastGWA`(<span style="color:#d62728">■</span>), `Linear Regression`(<span style="color:#8c564b">■</span>)
 
-### Test Script
-We provide a [test script](`https://github.com/rlangefe/pygemma/blob/main/tests/test_pygemma.py`) designed to test almost all basic functions and to run on three GWAS test cases (10,000 SNPs each). Before using the script, the paths for the data should be updated, as they are currently hardcoded (to be changed later). In our tests, this script took around 20 to 25 minutes to run on 32 cores. Below, we show the Q-Q and Manhattan plots for the three test cases.
+Based on this, we see that `pyGEMMA` is at $\approx$ 15-20 times faster than `GCTA` and over 10 times faster than `GEMMA`. While `fastGWA` is faster than `pyGEMMA` for small datasets, `pyGEMMA` is faster for larger datasets.
+
+### GEMMA Mouse Data
+This dataset consisted of 12,226 SNPs, 1940 mice, and 4 phenotypes. The data was taken from  [GEMMA](https://github.com/genetics-statistics/GEMMA)'s test dataset. The data can be found here: [GEMMA Mouse Data](https://github.com/genetics-statistics/GEMMA/tree/master/example)
+
+We use this dataset to benchmark scaling with the number of covariates in the model. We compared `pyGEMMA` against `GEMMA` and `GCTA`.
+
+<table>
+  <tr>
+    <td>Runtime</td>
+    <td>Speedup</td>
+  </tr>
+  <tr>
+    <td> <img src="./experiments/animal_gwas/benchmark_plots/runtime_vs_covars.png"  alt="Time by Sample Size" height = 200px ></td>
+    <td><img src="./experiments/animal_gwas/benchmark_plots/speedup_vs_covars.png" alt="Speedup by Sample Size" height = 200px></td>
+   </tr> 
+</table>
+
+Methods:
+`pyGEMMA`(<span style="color:#ff7f0e">■</span>), `GEMMA`(<span style="color:#1f77b4">■</span>), `GCTA`(<span style="color:#2ca02c">■</span>)
+
+Based on this, we see that `pyGEMMA` is significantly faster than both `GEMMA` and `GCTA`. It also exhibits better scaling behavior as the number of covariates increases.
+
+<!-- ### Test Script
+We provide a [test script](`https://github.com/rlangefe/pygemma/blob/main/tests/test_pygemma.py`) designed to test almost all basic functions and to run on three GWAS test cases (10,000 SNPs each). Before using the script, the paths for the data should be updated, as they are currently hardcoded (to be changed later). In our tests, this script took around 7.5 to 8 hours to run. Below, we show the Q-Q and Manhattan plots for the three test cases.
 
 <table>
   <tr>
@@ -139,7 +166,7 @@ We provide a [test script](`https://github.com/rlangefe/pygemma/blob/main/tests/
 ### 1000 Genomes Data
 We provide a number of scripts to run eQTL analyses for over 7100 genes using data from 1000 Genomes. These scripts are provided [here](https://github.com/rlangefe/pygemma/tree/main/experiments/1000G).
 
-The jobs may be launched by batching the [`run_pyGEMMA.sh`](https://github.com/rlangefe/pygemma/blob/main/experiments/1000G/run_pyGEMMA.sh) script. Note that all files in the directory should be examined and paths modified before running. The scripts were designed to run using the [SLURM](https://slurm.schedmd.com/) scheduler.
+The jobs may be launched by batching the [`run_pyGEMMA.sh`](https://github.com/rlangefe/pygemma/blob/main/experiments/1000G/run_pyGEMMA.sh) script. Note that all files in the directory should be examined and paths modified before running. The scripts were designed to run using the [SLURM](https://slurm.schedmd.com/) scheduler. -->
 
 ## Contact
 [@rlangefe](https://github.com/rlangefe) - Robert Langefeld (Department of Biostatistics - University of Michigan)
